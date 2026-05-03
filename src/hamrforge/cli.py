@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+from typing import Sequence
+
+from hamrforge.assignment import validate_assignment
+from hamrforge.batch import batch_grade
+from hamrforge.grading import GradeError, grade_submission
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="hamrforge",
+        description="HamrForge local C++ autograding tools.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    validate_parser = subparsers.add_parser(
+        "validate-assignment",
+        help="Validate an assignment folder containing assignment.yml.",
+    )
+    validate_parser.add_argument("assignment", type=Path, help="Path to the assignment folder.")
+    validate_parser.set_defaults(func=_validate_assignment_command)
+
+    grade_parser = subparsers.add_parser(
+        "grade",
+        help="Grade one ZIP submission against an assignment. Currently supports required-file checks only.",
+    )
+    grade_parser.add_argument("assignment", type=Path, help="Path to the assignment folder.")
+    grade_parser.add_argument("submission", type=Path, help="Path to the student ZIP submission.")
+    grade_parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Directory where report.json and report.md should be written.",
+    )
+    grade_parser.set_defaults(func=_grade_command)
+
+    batch_parser = subparsers.add_parser(
+        "batch-grade",
+        help="Grade many ZIP submissions and write CSV, summary JSON, and feedback reports.",
+    )
+    batch_parser.add_argument("assignment", type=Path, help="Path to the assignment folder.")
+    batch_parser.add_argument(
+        "submissions",
+        nargs="+",
+        help="ZIP files or glob patterns. Quote globs if you want HamrForge to expand them.",
+    )
+    batch_parser.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="Directory where batch reports should be written.",
+    )
+    batch_parser.set_defaults(func=_batch_grade_command)
+
+    web_parser = subparsers.add_parser(
+        "web",
+        help="Run the private instructor web UI.",
+    )
+    web_parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind.")
+    web_parser.add_argument("--port", type=int, default=8000, help="Port to bind.")
+    web_parser.set_defaults(func=_web_command)
+
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+def _validate_assignment_command(args: argparse.Namespace) -> int:
+    result = validate_assignment(args.assignment)
+    if result.is_valid:
+        print(f"Assignment is valid: {result.assignment_path}")
+        return 0
+
+    print(f"Assignment is invalid: {result.assignment_path}")
+    for error in result.errors:
+        print(f"- {error}")
+    return 1
+
+
+def _grade_command(args: argparse.Namespace) -> int:
+    out_dir = args.out or Path("reports") / args.submission.stem
+    try:
+        result = grade_submission(args.assignment, args.submission, out_dir)
+    except GradeError as exc:
+        print(f"Could not grade submission: {exc}")
+        return 1
+
+    print(f"Score: {result.score:g} / {result.max_score:g}")
+    for check in result.checks:
+        status = "passed" if check.passed else "failed"
+        print(f"{check.name}: {status} ({check.score:g} / {check.max_score:g})")
+        if check.missing_files:
+            print("Missing files:")
+            for filename in check.missing_files:
+                print(f"- {filename}")
+        if check.detail and not check.passed:
+            print("Details:")
+            print(check.detail)
+    print("Reports saved:")
+    print(f"- {result.report_json_path}")
+    print(f"- {result.report_md_path}")
+    return 0
+
+
+def _batch_grade_command(args: argparse.Namespace) -> int:
+    result = batch_grade(args.assignment, args.submissions, args.out)
+    print(f"Graded: {result.graded_count}")
+    print(f"Failed: {result.failed_count}")
+    print(f"Reports saved:")
+    print(f"- {result.grades_csv_path}")
+    print(f"- {result.summary_json_path}")
+    print(f"- {result.feedback_dir}")
+    return 0 if result.failed_count == 0 else 1
+
+
+def _web_command(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    uvicorn.run("hamrforge.web:app", host=args.host, port=args.port, reload=False)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
