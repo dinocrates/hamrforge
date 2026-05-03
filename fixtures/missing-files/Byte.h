@@ -1,9 +1,14 @@
 #ifndef BYTE_H
 #define BYTE_H
 
+#include <string>
+
 class Byte {
 public:
-    explicit Byte(int value);
+    Byte();
+    void setValue(int value);
+    int at(int index);
+    std::string toString();
     int toInt() const;
 };
 

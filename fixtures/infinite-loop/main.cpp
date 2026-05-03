@@ -2,6 +2,8 @@
 
 int main() {
     Byte b;
-    b.setValue(13);
+    b.setValue(99);
+    while (true) {
+    }
     return b.toInt();
 }

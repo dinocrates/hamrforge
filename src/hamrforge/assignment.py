@@ -72,6 +72,7 @@ def validate_assignment(assignment_dir: Path) -> ValidationResult:
     _validate_non_empty_string(assignment, "standard", errors)
     _validate_non_empty_string(assignment, "compiler", errors)
     _validate_positive_number(assignment, "max_score", errors)
+    _validate_runner(assignment.get("runner"), errors)
     _validate_submission(assignment.get("submission"), errors)
     _validate_checks(assignment.get("checks"), errors)
 
@@ -88,6 +89,24 @@ def _validate_positive_number(config: dict[str, Any], field: str, errors: list[s
     value = config.get(field)
     if field in config and (isinstance(value, bool) or not isinstance(value, int | float) or value <= 0):
         errors.append(f"{field} must be a positive number.")
+
+
+def _validate_runner(runner: Any, errors: list[str]) -> None:
+    if runner is None:
+        return
+    if isinstance(runner, str):
+        if not runner.strip():
+            errors.append("runner must be a non-empty string or mapping.")
+        return
+    if isinstance(runner, dict):
+        runner_type = runner.get("type")
+        if runner_type is not None and (not isinstance(runner_type, str) or not runner_type.strip()):
+            errors.append("runner.type must be a non-empty string.")
+        image = runner.get("image")
+        if image is not None and (not isinstance(image, str) or not image.strip()):
+            errors.append("runner.image must be a non-empty string.")
+        return
+    errors.append("runner must be a non-empty string or mapping.")
 
 
 def _validate_submission(submission: Any, errors: list[str]) -> None:

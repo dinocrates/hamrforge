@@ -1,6 +1,6 @@
 # HamrForge
 
-HamrForge is an open-source, repo-based C++ autograding project for instructors. The first milestone is deliberately small: a local CLI that can validate an assignment folder before grading features are added.
+HamrForge is an open-source, repo-based autograding project for instructors. Rev 1 is deliberately focused on C++, but the grading core now has a small language-adapter boundary so future languages can be added without rewriting the whole engine.
 
 ## Install for Local Development
 
@@ -54,8 +54,17 @@ Manual ZIP test cases live in `test-cases/`:
 
 ```bash
 hamrforge grade assignments/byte-class test-cases/perfect.zip
-hamrforge grade assignments/byte-class test-cases/bad-addition.zip
+hamrforge grade assignments/byte-class test-cases/bad-bit-order.zip
 hamrforge grade assignments/byte-class test-cases/compile-error.zip
+hamrforge grade assignments/byte-class test-cases/infinite-loop.zip
+hamrforge grade assignments/byte-class test-cases/huge-output.zip
+hamrforge grade assignments/byte-class test-cases/missing-files.zip
+```
+
+You can also grade an existing folder/workspace:
+
+```bash
+hamrforge grade assignments/byte-class data/workspaces/demo-student/byte-class
 ```
 
 ## Grade a Batch of ZIP Submissions
@@ -89,13 +98,80 @@ Then open:
 http://127.0.0.1:8000
 ```
 
-The first web UI grades one ZIP at a time and writes uploads/reports under `data/`.
+The private web UI can open a student workspace and can still grade one legacy ZIP at a time for instructor testing. Uploads and web reports are written under `data/`.
+
+## Student Workspace Prototype
+
+Create a demo workspace from assignment starter files:
+
+```bash
+hamrforge create-workspace assignments/byte-class --owner demo-student
+```
+
+This creates:
+
+```text
+data/workspaces/demo-student/byte-class/
+  .hamrforge/
+    workspace.json
+  Byte.cpp
+  Byte.h
+  main.cpp
+```
+
+From the web UI, use **Create / Open** to read the assignment instructions, edit files in a syntax-highlighted browser editor, save changes, and grade the current workspace. Workspace grading stores attempt reports and snapshots under `.hamrforge/attempts/`.
+
+## Language Adapter Boundary
+
+HamrForge Core handles assignment parsing, submission unpacking, shared checks, orchestration, reports, batch grading, and web/workspace flow.
+
+Language adapters handle language-specific build, run, test generation, compiler/interpreter configuration, and feedback normalization.
+
+Rev 1 implements only:
+
+```text
+LanguageAdapter
+  CppAdapter
+```
+
+Assignments with `language: cpp` are routed to `CppAdapter`. Other languages return a clear unsupported-language error until their adapters are intentionally added later.
 
 ## Runner Backends
 
 HamrForge now routes compile execution through a runner abstraction.
 
-The default backend is `LocalUnsafeRunner`, which invokes the compiler directly on your machine. This is useful for MVP development, but it is not appropriate for real untrusted student submissions.
+The default backend is `LocalUnsafeRunner`, which invokes the compiler and student executables directly on your machine. This is useful for MVP development, but it is unsafe and not appropriate for real untrusted student submissions.
+
+Assignments can select the current development runner in `assignment.yml`:
+
+```yaml
+runner: local_unsafe
+```
+
+If `runner` is omitted, HamrForge currently defaults to `local_unsafe`. Unsupported runner names fail clearly.
+
+HamrForge can also run compile and executable commands through the Podman CLI:
+
+```yaml
+runner:
+  type: podman
+  image: hamrforge-cpp-runner
+```
+
+The image defaults to `hamrforge-cpp-runner` when omitted. The Podman runner mounts the temporary grading workspace at `/workspace` and applies basic safety flags: no network, memory limit, CPU limit, process limit, read-only root filesystem, dropped capabilities, no-new-privileges, and a non-root user.
+
+You can also override the runner from the CLI for one grading run:
+
+```bash
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner local_unsafe
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner podman
+```
+
+Use a custom image with:
+
+```bash
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner podman --runner-image my-cpp-runner
+```
 
 Future backends will plug into the same interface:
 
@@ -108,6 +184,72 @@ SandboxRunner
 
 For real classroom or production use, HamrForge should use an OCI-compatible sandbox backend with CPU, memory, process, filesystem, and network limits.
 
+## Installing and Testing Podman
+
+On Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install podman
+podman --version
+```
+
+Build or pull an image that contains the C++ toolchain HamrForge expects. The default image name is:
+
+```text
+hamrforge-cpp-runner
+```
+
+HamrForge includes a minimal C++ runner image definition. From the repository root, build it with:
+
+```bash
+podman build -t hamrforge-cpp-runner .
+```
+
+Smoke-test the image:
+
+```bash
+podman run --rm hamrforge-cpp-runner g++ --version
+```
+
+Then smoke-test HamrForge through both current runners:
+
+```bash
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner local_unsafe
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner podman
+```
+
+The Podman runner is expected to report clear failures for:
+
+- missing Podman CLI: `Podman CLI not found`
+- missing runner image: Podman's image error plus `Podman container exited with status ...`
+- nonzero container command: `Podman container exited with status ...`
+- timeout: `Podman container timed out after ... seconds`
+
+The runner applies or enforces these limits where the current Podman CLI path supports them:
+
+- no network: `--network none`
+- memory limit: `--memory 256m`
+- CPU limit: `--cpus 1`
+- process limit: `--pids-limit 64`
+- timeout: Python subprocess timeout around each compile/run container invocation
+- output limit: captured stdout and stderr are each truncated after 65,536 bytes
+- read-only root filesystem: `--read-only`, with a writable mounted workspace and `/tmp` tmpfs
+- non-root user: `--userns keep-id` and `--user 1000:1000`
+- reduced privileges: `--security-opt no-new-privileges` and `--cap-drop ALL`
+
+Manual runner verification checklist:
+
+```bash
+hamrforge grade assignments/byte-class test-cases/perfect.zip --runner podman
+hamrforge grade assignments/byte-class test-cases/compile-error.zip --runner podman
+hamrforge grade assignments/byte-class test-cases/missing-files.zip --runner podman
+hamrforge grade assignments/byte-class test-cases/infinite-loop.zip --runner podman
+hamrforge grade assignments/byte-class test-cases/huge-output.zip --runner podman
+```
+
+The normal automated test suite does not require Podman to be installed. It tests command construction and runner failure handling with fake subprocess calls.
+
 ## Run Tests
 
 ```bash
@@ -116,7 +258,7 @@ pytest
 
 ## Current Scope
 
-This scaffold implements assignment validation, single-ZIP grading, batch grading, required-file checks, local unsafe compile checks, generated expression tests, console I/O checks, a runner abstraction, and a private one-ZIP web UI. It does not run C++ in containers, provide accounts, provide a job queue, or integrate with Canvas LTI yet.
+This scaffold implements assignment validation, single-ZIP grading, folder/workspace grading, batch grading, required-file checks, a C++ adapter, local unsafe compile checks, generated C++ expression tests, console I/O checks, a runner abstraction, an initial Podman C++ runner path, a private web UI, and a first student workspace prototype. It does not implement Java/NASM/RISC-V adapters, production-grade sandboxing, accounts, a job queue, or Canvas LTI yet.
 
 ## License
 

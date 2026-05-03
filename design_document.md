@@ -6,9 +6,11 @@
 
 ## Project Vision
 
-HamrForge is an open-source, repo-based C++ autograding and courseware activity system designed for instructors who want the usefulness of commercial platforms like ZyBooks or zyLabs without vendor lock-in, opaque assignment design, or difficult test authoring.
+HamrForge is an open-source, repo-based student coding workspace and autograding system designed for instructors who want the usefulness of commercial platforms like ZyBooks or zyLabs without vendor lock-in, opaque assignment design, difficult test authoring, or heavy student setup requirements. Rev 1 focuses on C++ through the first implemented language adapter.
 
-The project begins as a local/home-server instructor tool and scaffolds upward toward a student-facing, server-hosted workspace system that can eventually launch from Canvas through LTI.
+The project begins with a local/home-server grading engine and scaffolds upward toward the real product goal: a student-facing, server-hosted assignment workspace system that can eventually launch from Canvas through LTI.
+
+Instructor ZIP and batch grading are useful early utilities and compatibility paths. They help test the engine, support legacy submissions, and give instructors a fallback workflow. They are not the final center of the product.
 
 The core promise:
 
@@ -56,7 +58,7 @@ assignment-byte-class/
     perfect/
     compile-error/
     missing-files/
-    bad-addition/
+    bad-bit-order/
 ```
 
 ## 1.2 Teacher-friendly test authoring
@@ -107,10 +109,10 @@ Test failed.
 It should aim for feedback like:
 
 ```text
-operator+ failed for 128 + 1.
-Expected: 129
-Actual: 1
-Likely issue: your conversion method may be reading the bits in the wrong order or truncating values above 127.
+setValue/toInt failed for value 99.
+Expected: 99
+Actual: 198
+Likely issue: your bit order may be reversed when storing or converting bits.
 ```
 
 Feedback quality is part of the product, not an afterthought.
@@ -145,14 +147,19 @@ The project must be useful before it becomes ambitious.
 The staged path is:
 
 ```text
-Local CLI grader
-→ private home-server web app
-→ server-side student workspaces
-→ lightweight browser coding environment
-→ sandboxed worker system
-→ Canvas LTI pilot
+Local CLI grading engine
+→ folder/workspace grading
+→ starter workspace creation
+→ basic student workspace web UI
+→ sandboxed runner
+→ job queue
+→ instructor batch/legacy ZIP utilities
+→ Canvas LTI launch
+→ grade passback
 → district-hosted solution
 ```
+
+The CLI ZIP grader can come first because it is the smallest way to prove the grading engine. That does not make ZIP upload the primary long-term product model.
 
 ---
 
@@ -162,7 +169,8 @@ Local CLI grader
 
 The first version should support:
 
-- C++17 grading
+- C++17 grading through the first implemented language adapter
+- a simple language-adapter boundary so the core is not hard-coded to C++
 - assignment repo format
 - required file checks
 - compile checks
@@ -179,6 +187,7 @@ The first version should support:
 
 Later versions may support:
 
+- additional language adapters
 - Canvas LTI launch
 - Canvas grade passback
 - Deep Linking assignment selection
@@ -187,10 +196,9 @@ Later versions may support:
 - server-side student workspaces/repos
 - basic browser file editor
 - reusable OER assignment library
-- additional languages
 - GitHub Classroom-style workflows
 - richer browser-based coding environment
-- batch grading of uploaded ZIP submissions
+- instructor batch grading of legacy uploaded ZIP submissions
 - plagiarism/similarity checks
 - AI-assisted feedback drafting
 
@@ -201,7 +209,7 @@ Do not build these first:
 - full LMS replacement
 - full browser IDE
 - commercial-style courseware marketplace
-- multi-language support
+- implemented multi-language support beyond C++
 - district deployment
 - Canvas LTI
 - roster sync
@@ -211,23 +219,230 @@ Do not build these first:
 
 The first useful tool is:
 
-> assignment repo + student ZIP submissions → score reports and feedback
+> assignment repo + grading engine → score reports and feedback
 
 The first student-facing version is:
 
 > assignment repo + starter files → server-side student workspace → grade current workspace → feedback report
 
+The primary product model is:
+
+```text
+assignment repo
+→ starter files
+→ student workspace
+→ attempt snapshot
+→ grading result
+→ feedback
+```
+
+ZIP submissions remain supported as a compatibility input source, not as the main student-facing workflow.
+
+## 2.4 Language Adapter Architecture
+
+HamrForge Core should not be hard-coded as a C++-only grader. From the beginning, the architecture should use a language-adapter model: the core owns the grading workflow, and a selected `LanguageAdapter` owns language-specific build, run, and test behavior.
+
+This is an architecture decision, not a Rev 1 scope expansion. Rev 1 ships with only one implemented adapter: C++. Java, NASM, and RISC-V are planned future adapters and should not be implemented in Rev 1.
+
+The reason for this boundary is practical: instructors should eventually be able to use the same HamrForge workflow for different teaching contexts without rewriting the core grading engine. But the first useful product is still a working C++ grader.
+
+### Conceptual flow
+
+```text
+assignment.yml
+→ workspace snapshot or legacy submission files
+→ HamrForge Core
+→ selected LanguageAdapter
+→ sandbox runner
+→ build/run/check results
+→ report
+```
+
+### HamrForge Core responsibilities
+
+HamrForge Core should handle:
+
+- `assignment.yml` parsing
+- submission unpacking
+- required file checks when language-neutral
+- check orchestration
+- report generation
+- batch grading for instructor/legacy workflows
+- sandbox runner selection
+- later web/LTI integration
+
+### Language adapter responsibilities
+
+Language adapters should handle:
+
+- language-specific build steps
+- language-specific run steps
+- language-specific test generation
+- language-specific check types
+- language-specific compiler/interpreter/simulator configuration
+- language-specific feedback normalization
+
+### Rev 1 Implemented Adapter: C++
+
+C++ is the only language adapter implemented for Rev 1.
+
+The Rev 1 `CppAdapter` should support:
+
+- required file checks
+- compile checks
+- console I/O checks
+- compatibility with instructor batch grading orchestration
+- Markdown and JSON reports
+- eventual generated Catch2 or doctest tests
+- Linux grading runtime, even when developed from Windows/WSL
+
+Rev 1 may have a simple adapter boundary. It does not need a sophisticated plugin system. The important thing is that `language: cpp` routes to the C++ adapter and unsupported languages fail clearly.
+
+### Planned Future Adapters
+
+Future adapters can be added without rewriting the core grading engine.
+
+`JavaAdapter` may support:
+
+- `javac` compile checks
+- console I/O checks
+- eventual JUnit tests
+
+`NasmAdapter` may support:
+
+- Linux x86-64 NASM first
+- `.asm` and `.inc` support
+- assemble checks
+- link checks
+- console I/O checks
+- symbol checks
+- instruction-pattern checks
+- possible later function-level testing through known labels/functions and generated harnesses
+
+`RiscVAdapter` may support:
+
+- RARS simulator mode first for introductory teaching
+- possible later QEMU/toolchain mode
+- console I/O checks
+- instruction-pattern checks
+- simulator/toolchain-specific reports
+
+### Shared vs. Adapter-Specific Checks
+
+Shared/core checks may include:
+
+- `file_check`
+- `code_pattern` where language-neutral
+- `console_io` where executable output is available
+- `timeout`
+- `output_contains` / `output_matches`
+- `manual_flag`
+
+C++ adapter checks may include:
+
+- `compile`
+- `expression_test`
+- `catch2_test`
+- `doctest_test`
+
+Java adapter checks may include:
+
+- `javac_compile`
+- `junit_test`
+
+NASM adapter checks may include:
+
+- `assemble`
+- `link`
+- `symbol_check`
+- `instruction_pattern`
+
+RISC-V adapter checks may include:
+
+- `rars_assemble`
+- `rars_run`
+- `riscv_instruction_pattern`
+
+### Rev 1 Scope Guardrails
+
+- Rev 1 implements only C++.
+- The adapter architecture should exist, but only `CppAdapter` needs to be functional.
+- Do not implement Java in Rev 1.
+- Do not implement NASM in Rev 1.
+- Do not implement RISC-V in Rev 1.
+- Do not build a plugin marketplace in Rev 1.
+- Do not delay the C++ MVP by over-engineering the adapter system.
+- The goal is a working C++ grader with a clean path for future adapters.
+
 ---
 
-# 3. Cross-Platform Strategy: Windows Development, Linux Runtime
+# 3. Student Workspace Model
 
-## 3.1 The situation
+HamrForge's primary student-facing model is an assignment workspace, not a ZIP upload form.
+
+Each assignment repo should provide starter files. When a student opens or launches an assignment, HamrForge creates or opens that student's private workspace for that assignment. In the early home-server version, a workspace can be a managed server folder under local storage. Later, the workspace may become Git-backed or otherwise versioned so student work can be tracked, restored, and moved more easily.
+
+Students should eventually be able to:
+
+- launch or open an assignment
+- receive starter files in a server-side workspace
+- edit project files in HamrForge
+- click Run or Grade
+- receive pass/fail feedback and useful details
+- revise and try again multiple times
+
+Grading should operate on a snapshot of the workspace, not directly on a mutable folder that may change while grading is running. This keeps each grading result tied to the exact source state that produced it.
+
+The core workflow is:
+
+```text
+assignment repo
+→ starter files
+→ student workspace
+→ attempt snapshot
+→ grading result
+→ feedback
+```
+
+ZIP and batch grading should remain available for early development, legacy submissions, and instructor-only workflows. They should not drive the main web product design.
+
+## 3.1 Submission vs. Attempt vs. Workspace
+
+`workspace`:
+The current editable project folder for one student and one assignment. It contains the files the student sees and edits.
+
+`attempt`:
+A graded point-in-time snapshot of a workspace or uploaded ZIP. Attempts preserve what was graded, when it was graded, and what result was produced.
+
+`submission`:
+A compatibility input source for the grader. A submission may be an uploaded ZIP or a workspace snapshot. In the student-facing product, workspace snapshots should become the normal submission source.
+
+## 3.2 Workspace Lifecycle
+
+```text
+Assignment published
+→ student workspace created from starter files
+→ student edits files
+→ student clicks Grade
+→ HamrForge creates attempt snapshot
+→ grading worker grades the snapshot
+→ feedback is stored and shown
+→ best/latest score can later pass back to Canvas
+```
+
+For early prototypes, "student" may mean a demo `owner_key`, and "worker" may mean the same process running locally. The lifecycle should still be modeled this way so the project can grow into queues, sandboxes, accounts, and Canvas without changing the product concept.
+
+---
+
+# 4. Cross-Platform Strategy: Windows Development, Linux Runtime
+
+## 4.1 The situation
 
 The instructor/developer may run the project at home on Windows, but the eventual backend should be Linux-based.
 
 This is not a blocker, but it must shape the architecture.
 
-## 3.2 Design decision
+## 4.2 Design decision
 
 HamrForge should be cross-platform at the orchestration layer, but Linux-based at the grading/runtime layer.
 
@@ -246,7 +461,7 @@ Linux production server
 
 The grading environment should be treated as Linux-canonical.
 
-## 3.3 Why this works
+## 4.3 Why this works
 
 C++ student code should be compiled and tested inside a Linux container regardless of whether the developer host is Windows or Linux.
 
@@ -256,7 +471,7 @@ That means the same assignment should behave consistently on:
 - Linux server + Docker Engine
 - future district-hosted Linux infrastructure
 
-## 3.4 Coding rules for cross-platform sanity
+## 4.4 Coding rules for cross-platform sanity
 
 The application code should follow these rules:
 
@@ -305,6 +520,8 @@ Student ZIP files may contain:
 
 The submission parser should normalize and report what it finds.
 
+ZIP normalization remains important for legacy and instructor workflows. Student-facing workspace grading should normally avoid ZIP upload entirely by grading attempt snapshots.
+
 ### Treat containers as the only place student code executes
 
 The host operating system should not matter because student code should run only inside grading containers.
@@ -339,7 +556,7 @@ The host should not need `g++` installed. The grading image should contain:
 - Python runner scripts if needed
 - timeout utilities
 
-## 3.5 Development recommendation
+## 4.5 Development recommendation
 
 For Windows home development:
 
@@ -350,13 +567,15 @@ For Windows home development:
 
 ---
 
-# 4. System Evolution
+# 5. System Evolution
 
-## 4.1 Version 0: Local CLI Grader
+## 5.1 Version 0: Local CLI Grading Engine
 
 ### Goal
 
-Create a command-line tool that grades one student submission against one assignment repo.
+Create a command-line tool that proves the grading engine against one assignment repo and one input source.
+
+This version may grade ZIP files first because ZIPs are easy to test from the terminal. That is an engine-testing convenience, not the final product model.
 
 ### Example command
 
@@ -383,12 +602,14 @@ Reports saved:
 
 - load `assignment.yml`
 - validate assignment config
+- route `language: cpp` to the C++ language adapter
+- return a clear unsupported-language error for any non-C++ Rev 1 assignment
 - unzip student submission
 - ignore common junk folders
 - find source files
 - check required files
-- compile C++ code
-- run basic tests
+- compile C++ code through `CppAdapter`
+- run basic C++ tests through `CppAdapter`
 - generate JSON and Markdown reports
 
 ### No web app yet
@@ -408,7 +629,7 @@ HamrForge can grade at least ten fake fixture submissions and produce expected s
 
 ---
 
-## 4.2 Version 1: Folder and Workspace Grader
+## 5.2 Version 1: Folder and Workspace Grader
 
 ### Goal
 
@@ -449,7 +670,7 @@ HamrForge can grade a checked-out or copied student workspace folder without fir
 
 ---
 
-## 4.3 Version 2: Starter Workspace Prototype
+## 5.3 Version 2: Starter Workspace Prototype
 
 ### Goal
 
@@ -479,7 +700,7 @@ The private web app can create a demo workspace from `assignments/byte-class/sta
 
 ---
 
-## 4.4 Version 3: Basic Student Workspace Web App
+## 5.4 Version 3: Basic Student Workspace Web App
 
 ### Goal
 
@@ -505,7 +726,7 @@ Student opens HamrForge web app
 - assignment discovery from local assignment folders
 - demo student workspace creation
 - simple browser file list
-- simple text editor for starter/source files
+- simple browser editor with lightweight syntax highlighting for starter/source files
 - save file changes
 - grade current workspace
 - display feedback
@@ -514,6 +735,7 @@ Student opens HamrForge web app
 
 - full IDE
 - terminal access
+- advanced editor tooling such as autocomplete, debugging, or project-wide search
 - accounts
 - collaboration
 - Canvas/LTI identity
@@ -528,7 +750,7 @@ create workspace → edit code → save → grade → read feedback
 
 ---
 
-## 4.5 Version 4: Containerized Local Grader
+## 5.5 Version 4: Containerized Workspace Grader
 
 ### Goal
 
@@ -542,7 +764,7 @@ Student code should not run directly on the host machine.
 
 ```text
 CLI tool
-  → prepares grading workspace
+  → prepares attempt snapshot
   → launches Linux grading container
   → container compiles/runs tests
   → container emits results
@@ -577,9 +799,73 @@ Test fixtures should include:
 - forbidden include
 - wrong file type
 
+### Runner Verification Checkpoint
+
+Before adding more grading features on top of the container runner, HamrForge needs a focused runner verification checkpoint.
+
+The checkpoint should prove that:
+
+- perfect submissions still grade correctly through the local unsafe runner and the Podman runner
+- compile-error submissions produce clear compile feedback
+- infinite-loop submissions time out instead of hanging the grader
+- huge-output submissions have captured output limited
+- missing-file submissions still report required-file failures clearly
+- Podman command construction is covered by automated tests without requiring Podman in CI
+- manual Podman smoke tests are documented for a developer or instructor running HamrForge locally
+
+The current Podman runner should apply or document these limits where supported:
+
+- no network
+- memory limit
+- CPU limit
+- process limit
+- timeout
+- captured output limit
+- non-root user
+- host user namespace mapping where needed for writable workspaces
+- read-only root filesystem where practical
+- dropped capabilities and no-new-privileges where practical
+
+This checkpoint is still not the final production sandbox. It is the MVP proof that grading commands flow through the sandbox boundary and that the next grading features can target the runner interface instead of the host.
+
 ---
 
-## 4.6 Version 5: Private Instructor Utilities
+## 5.6 Version 5: Job Queue and Worker Architecture
+
+### Goal
+
+Separate the web app from the grading worker.
+
+### Why
+
+Grading can be slow, dangerous, and resource intensive. A student clicking Grade should create a job and receive status updates while a worker grades an attempt snapshot.
+
+### Architecture
+
+```text
+Web App
+  → saves workspace changes
+  → creates attempt snapshot
+  → creates grading job
+  → returns job status
+
+Queue
+  → holds pending grading jobs
+
+Worker
+  → pulls job
+  → launches sandbox
+  → grades snapshot
+  → stores result and report
+```
+
+### Success criteria
+
+Multiple student grading attempts can be queued and processed without freezing the web app.
+
+---
+
+## 5.7 Version 6: Private Instructor Utilities
 
 ### Goal
 
@@ -599,6 +885,8 @@ Instructor opens HamrForge web app
 → reports are displayed/downloadable
 ```
 
+This is a support workflow. It is useful for early development, legacy submissions, and instructor-only grading. It should not become the primary student-facing product direction.
+
 ### Backend components
 
 For the first home-server version:
@@ -607,7 +895,7 @@ For the first home-server version:
 FastAPI web app
 SQLite database
 local file storage
-Docker grading containers
+Podman/OCI grading containers
 ```
 
 Later:
@@ -617,60 +905,16 @@ FastAPI web app
 PostgreSQL
 Redis queue
 Celery/RQ workers
-Docker grading containers
+Podman/OCI grading containers
 ```
 
 ### Success criteria
 
-The instructor can still grade legacy ZIP submissions and download grades plus feedback, but this is a support workflow rather than the main student-facing path.
+The instructor can still grade legacy ZIP submissions and download grades plus feedback, while the main product path remains student workspaces.
 
 ---
 
-## 4.7 Version 6: Job Queue and Worker Architecture
-
-### Goal
-
-Separate the web app from the grading worker.
-
-### Why
-
-Grading can be slow, dangerous, and resource intensive. The web app should not block while grading occurs.
-
-### Architecture
-
-```text
-Web App
-  → stores workspace changes or legacy upload
-  → creates grading job
-  → returns job status
-
-Queue
-  → holds pending grading jobs
-
-Worker
-  → pulls job
-  → launches sandbox
-  → runs grading
-  → stores result
-```
-
-### Recommended components
-
-```text
-FastAPI
-PostgreSQL
-Redis
-Celery or RQ
-Docker worker containers
-```
-
-### Success criteria
-
-Multiple workspace grading attempts or legacy ZIP submissions can be queued and processed without freezing the web app.
-
----
-
-## 4.8 Version 7: Canvas LTI Pilot
+## 5.8 Version 7: Canvas LTI Pilot
 
 ### Goal
 
@@ -728,7 +972,7 @@ Canvas gradebook receives a real autograder score from a real C++ workspace atte
 
 ---
 
-## 4.9 Version 8: Deep Linking Assignment Picker
+## 5.9 Version 8: Deep Linking Assignment Picker
 
 ### Goal
 
@@ -751,7 +995,7 @@ An instructor can choose an assignment from the HamrForge library without manual
 
 ---
 
-## 4.10 Version 9: District-Hosted Solution
+## 5.10 Version 9: District-Hosted Solution
 
 ### Goal
 
@@ -791,9 +1035,9 @@ HamrForge is approved for limited or district-wide Canvas use.
 
 ---
 
-# 5. Backend Architecture
+# 6. Backend Architecture
 
-## 5.1 Home-server MVP architecture
+## 6.1 Home-server MVP architecture
 
 ```text
 Browser
@@ -804,14 +1048,14 @@ SQLite Database
   ↓
 Local File Storage
   ↓
-Docker Grading Container
+Podman/OCI Grading Container
   ↓
 Report Files
 ```
 
 This version is simple and private.
 
-## 5.2 Scalable architecture
+## 6.2 Scalable architecture
 
 ```text
 Browser / Canvas
@@ -831,15 +1075,16 @@ Report Storage
 Canvas Grade Passback
 ```
 
-## 5.3 Service responsibilities
+## 6.3 Service responsibilities
 
 ### Web app
 
 - serve instructor/student pages
-- receive uploads
+- receive legacy uploads when needed
 - create and open student workspaces
-- serve a basic file editor
+- serve a basic file editor with lightweight syntax highlighting
 - save workspace file changes
+- create attempt snapshots from workspaces
 - validate file types
 - create grading jobs
 - display results
@@ -849,19 +1094,22 @@ Canvas Grade Passback
 ### Database
 
 - assignments
+- users or owner_keys
 - workspaces
 - workspace files or filesystem roots
-- submissions
 - attempts
+- workspace snapshots
+- submissions as compatibility input records
 - jobs
 - results
+- reports
 - user/course context later
 - LTI deployment information later
 
 ### Worker
 
 - pull grading jobs
-- prepare grading workspace from ZIP or existing student workspace
+- prepare grading workspace from an attempt snapshot or legacy ZIP submission
 - launch sandbox
 - collect results
 - store reports
@@ -876,17 +1124,17 @@ Canvas Grade Passback
 
 ---
 
-# 6. Assignment Format
+# 7. Assignment Format
 
-## 6.1 Example `assignment.yml`
+## 7.1 Example `assignment.yml`
 
 ```yaml
-title: Assignment 5 - Byte Class
+title: Unit 02 - Byte Class Construction
 slug: byte-class
 language: cpp
 standard: c++17
 compiler: g++
-max_score: 100
+max_score: 40
 
 submission:
   required_files:
@@ -908,62 +1156,68 @@ submission:
 checks:
   - name: Required files
     type: file_check
-    points: 10
+    points: 12
 
   - name: Compiles
     type: compile
-    points: 20
+    points: 6
 
-  - name: Constructor stores value
+  - name: setValue stores integer value
     type: expression_test
-    points: 15
+    points: 3
     include:
       - Byte.h
     setup: |
-      Byte b(13);
+      Byte b;
+      b.setValue(99);
     expect:
       expression: b.toInt()
-      equals: 13
+      equals: 99
 
-  - name: Addition operator works
+  - name: at returns expected bits
     type: expression_test
-    points: 15
+    points: 3
     include:
       - Byte.h
     setup: |
-      Byte a(5);
-      Byte b(7);
-      Byte c = a + b;
+      Byte b;
+      b.setValue(99);
     expect:
-      expression: c.toInt()
-      equals: 12
+      expression: b.at(0) == 1 && b.at(1) == 1 && b.at(2) == 0 && b.at(3) == 0 && b.at(4) == 0 && b.at(5) == 1 && b.at(6) == 1 && b.at(7) == 0
+      equals: true
 
-  - name: Edge case addition
+  - name: toString returns reversed bit string
     type: expression_test
-    points: 20
+    points: 2
     include:
       - Byte.h
     setup: |
-      Byte a(128);
-      Byte b(1);
-      Byte c = a + b;
+      Byte b;
+      b.setValue(99);
     expect:
-      expression: c.toInt()
-      equals: 129
+      expression: b.toString()
+      equals: "01100011"
 
-  - name: Menu accepts user input
+  - name: Boundary value 255 works
+    type: expression_test
+    points: 2
+    include:
+      - Byte.h
+    setup: |
+      Byte b;
+      b.setValue(255);
+    expect:
+      expression: b.toInt() == 255 && b.toString() == "11111111"
+      equals: true
+
+  - name: Program runs to completion
     type: console_io
-    points: 20
-    input: |
-      1
-      5
-      7
-      0
-    expected_contains:
-      - "12"
+    points: 12
+    input: ""
+    expected_contains: []
 ```
 
-## 6.2 Check types
+## 7.2 Check types
 
 ### `file_check`
 
@@ -991,69 +1245,70 @@ Flags submissions for instructor review.
 
 ---
 
-# 7. Grading Reports
+# 8. Grading Reports
 
-## 7.1 JSON report
+## 8.1 JSON report
 
 ```json
 {
-  "assignment": "Assignment 5 - Byte Class",
-  "score": 82,
-  "max_score": 100,
+  "assignment": "Unit 02 - Byte Class Construction",
+  "score": 32,
+  "max_score": 40,
   "checks": [
     {
       "name": "Required files",
       "type": "file_check",
-      "score": 10,
-      "max_score": 10,
+      "score": 12,
+      "max_score": 12,
       "passed": true,
       "feedback": "All required files were found."
     },
     {
-      "name": "Edge case addition",
+      "name": "setValue stores integer value",
       "type": "expression_test",
       "score": 0,
-      "max_score": 20,
+      "max_score": 3,
       "passed": false,
-      "feedback": "operator+ failed for 128 + 1. Expected 129."
+      "feedback": "Expression test failed.",
+      "detail": "Expected: 99\nActual: 198"
     }
   ],
   "flags": [
-    "manual_review_recommended"
+    "expression_test_failed"
   ]
 }
 ```
 
-## 7.2 Markdown report
+## 8.2 Markdown report
 
 ```markdown
 # HamrForge Feedback Report
 
-Assignment: Assignment 5 - Byte Class
-Score: 82 / 100
+Assignment: Unit 02 - Byte Class Construction
+Score: 32 / 40
 
 ## Results
 
-### Required files — 10 / 10
+### Required files — 12 / 12
 All required files were found.
 
-### Compiles — 20 / 20
+### Compiles — 6 / 6
 Your code compiled successfully using C++17.
 
-### Edge case addition — 0 / 20
-operator+ failed for 128 + 1.
+### setValue stores integer value — 0 / 3
+Expression test failed.
 
-Expected: 129  
-Actual: 1
+Expected: 99
+Actual: 198
 
-Suggestion: Check whether your binary conversion reads the bits in the correct order.
+Suggestion: Check whether the bits are being stored and converted in the expected order.
 ```
 
 ---
 
-# 8. Sandbox Design
+# 9. Sandbox Design
 
-## 8.1 Sandbox purpose
+## 9.1 Sandbox purpose
 
 The sandbox protects the host system from untrusted or broken student code.
 
@@ -1067,14 +1322,14 @@ Student code may:
 - attempt system calls
 - crash unexpectedly
 
-## 8.2 MVP sandbox
+## 9.2 MVP sandbox
 
-The MVP sandbox can use Docker containers.
+The MVP sandbox can use OCI containers. Podman is the first implemented CLI-backed runner because it can run rootless on Linux development and server environments.
 
 Minimum restrictions:
 
 ```bash
-docker run --rm \
+podman run --rm \
   --network none \
   --memory 256m \
   --cpus 1 \
@@ -1083,10 +1338,35 @@ docker run --rm \
   --tmpfs /tmp:rw,size=64m \
   --security-opt no-new-privileges \
   --cap-drop ALL \
+  --user 1000:1000 \
+  --volume /path/to/workspace:/workspace:rw \
+  --workdir /workspace \
   hamrforge-cpp-runner
 ```
 
-## 8.3 Future sandbox hardening
+Rev 1 should keep `local_unsafe` as the development default until the container image and host setup are easy to install. Assignments can opt into Podman with:
+
+```yaml
+runner:
+  type: podman
+  image: hamrforge-cpp-runner
+```
+
+The first `hamrforge-cpp-runner` image should be intentionally small:
+
+- Debian slim or another small Linux base suitable for C++ grading
+- `g++`
+- `make`
+- no Python unless the runner starts needing Python inside the container
+- Catch2/doctest added later when generated framework-based tests are introduced
+
+Smoke test:
+
+```bash
+podman run --rm hamrforge-cpp-runner g++ --version
+```
+
+## 9.3 Future sandbox hardening
 
 Later versions may use:
 
@@ -1096,7 +1376,7 @@ Later versions may use:
 - Firecracker microVMs
 - separate worker VM pool
 
-## 8.4 Production isolation principle
+## 9.4 Production isolation principle
 
 For a district-hosted version, grading workers should not have access to:
 
@@ -1110,13 +1390,13 @@ If a grading sandbox fails, the blast radius should be limited.
 
 ---
 
-# 9. Canvas LTI Design
+# 10. Canvas LTI Design
 
-## 9.1 LTI version
+## 10.1 LTI version
 
 Target LTI 1.3 / LTI Advantage.
 
-## 9.2 Required services
+## 10.2 Required services
 
 ### Core launch
 
@@ -1134,7 +1414,7 @@ Allows instructors to select HamrForge assignments while creating Canvas assignm
 
 Optional later. Useful for roster-aware dashboards.
 
-## 9.3 LTI launch flow
+## 10.3 LTI launch flow
 
 ```text
 Student opens Canvas assignment
@@ -1147,7 +1427,7 @@ Student opens Canvas assignment
 → HamrForge sends score to Canvas
 ```
 
-## 9.4 Deep Linking flow
+## 10.4 Deep Linking flow
 
 ```text
 Instructor creates Canvas assignment
@@ -1158,7 +1438,7 @@ Instructor creates Canvas assignment
 → Canvas stores activity link
 ```
 
-## 9.5 LTI deployment data
+## 10.5 LTI deployment data
 
 The system must store LTI deployment configuration securely:
 
@@ -1175,9 +1455,9 @@ These should never be committed to Git.
 
 ---
 
-# 10. Data Model
+# 11. Data Model
 
-## 10.1 Early SQLite tables
+## 11.1 Early SQLite tables
 
 ### assignments
 
@@ -1185,7 +1465,49 @@ These should never be committed to Git.
 - slug
 - title
 - path
+- language
 - created_at
+
+### users or owner_keys
+
+- id
+- owner_key
+- display_name nullable
+- created_at
+
+For early local use, `owner_key` may be a simple string such as `demo-student`. Later LTI users can map to this concept through platform identity.
+
+### workspaces
+
+- id
+- assignment_id
+- owner_key_id or owner_key
+- workspace_path
+- created_at
+- updated_at
+- last_opened_at nullable
+
+### workspace_snapshots
+
+- id
+- workspace_id
+- snapshot_path
+- created_at
+- source_kind
+
+For student-facing grading, snapshots preserve the exact source state that was graded. Early versions may store snapshots inside `.hamrforge/attempts/<attempt-id>/snapshot/`.
+
+### attempts
+
+- id
+- workspace_id
+- workspace_snapshot_id nullable
+- submission_id nullable
+- created_at
+- trigger_type
+- status
+
+An attempt represents a grading event. Most attempts should come from workspace snapshots. ZIP-backed attempts remain useful for instructor/legacy workflows.
 
 ### submissions
 
@@ -1194,24 +1516,9 @@ These should never be committed to Git.
 - original_filename
 - storage_path
 - submitted_at
+- source_kind
 
-### workspaces
-
-- id
-- assignment_id
-- owner_key
-- workspace_path
-- created_at
-- updated_at
-
-### attempts
-
-- id
-- workspace_id
-- submission_id nullable
-- created_at
-- source_snapshot_path
-- trigger_type
+Submissions are compatibility input records. A submission may refer to an uploaded ZIP or to a workspace snapshot prepared for grading.
 
 ### grading_jobs
 
@@ -1227,12 +1534,20 @@ These should never be committed to Git.
 
 - id
 - job_id
+- attempt_id
 - score
 - max_score
+- created_at
+
+### reports
+
+- id
+- grading_result_id
 - report_json_path
 - report_md_path
+- created_at
 
-## 10.2 Later LTI tables
+## 11.2 Later LTI tables
 
 ### lti_platforms
 
@@ -1270,31 +1585,33 @@ These should never be committed to Git.
 
 ---
 
-# 11. Security and Privacy
+# 12. Security and Privacy
 
-## 11.1 Data minimization
+## 12.1 Data minimization
 
 Collect only what is needed.
 
-For the home-server instructor version:
+For the home-server/student-workspace version:
 
-- submission files
-- inferred student names if provided by filename
+- owner keys or minimal user identifiers
+- workspace files
+- attempt snapshots
 - grades
 - feedback reports
+- legacy submission files when instructor ZIP workflows are used
 
 For LTI version:
 
 - Canvas user identifier
 - Canvas course/context identifier
 - Canvas assignment/resource identifier
-- submission files
+- workspace files and attempt snapshots
 - grading results
 - score returned to Canvas
 
 Avoid collecting unnecessary personal data.
 
-## 11.2 Secrets management
+## 12.2 Secrets management
 
 Never commit:
 
@@ -1305,7 +1622,7 @@ Never commit:
 
 Use environment variables or mounted secret files.
 
-## 11.3 Upload safety
+## 12.3 Upload safety
 
 The upload layer should:
 
@@ -1316,13 +1633,13 @@ The upload layer should:
 - prevent zip-slip path traversal
 - normalize extracted files
 
-## 11.4 Logging
+## 12.4 Logging
 
 Logs should include enough information to debug grading jobs but not expose unnecessary student data.
 
 ---
 
-# 12. Accessibility
+# 13. Accessibility
 
 The web interface should target WCAG 2.1 AA.
 
@@ -1338,9 +1655,9 @@ Design expectations:
 
 ---
 
-# 13. Codex Development Strategy
+# 14. Codex Development Strategy
 
-## 13.1 Use small tickets
+## 14.1 Use small tickets
 
 Do not ask Codex to build the whole project at once.
 
@@ -1357,7 +1674,7 @@ The command should load assignment.yml, validate required fields, and print clea
 Do not implement grading yet.
 ```
 
-## 13.2 Suggested Codex ticket sequence
+## 14.2 Suggested Codex ticket sequence
 
 ### Ticket 1: Project scaffold
 
@@ -1372,38 +1689,40 @@ Do not implement grading yet.
 - validate required fields
 - print useful errors
 
-### Ticket 3: Submission unpacker
+### Ticket 3: Initial language adapter boundary
+
+- define the first simple `LanguageAdapter` interface or adapter boundary
+- implement only `CppAdapter`
+- route `language: cpp` assignments to `CppAdapter`
+- return a clear unsupported-language error for any other language
+- do not implement Java, NASM, or RISC-V yet
+
+### Ticket 4: Submission unpacker
 
 - unzip submissions
 - ignore junk folders
 - prevent zip-slip
 - list discovered source files
 
-### Ticket 4: File check grader
+### Ticket 5: File check grader
 
 - check required files
 - produce JSON result
 
-### Ticket 5: Compile check
+### Ticket 6: C++ compile check
 
-- compile C++ files
+- compile C++ files through `CppAdapter`
 - capture compiler output
 - report success/failure
 
-### Ticket 6: Markdown and JSON reports
+### Ticket 7: Markdown and JSON reports
 
 - write `report.json`
 - write `report.md`
 
-### Ticket 7: Batch grading utility
+### Ticket 8: C++ expression test generator
 
-- grade all ZIP files in a directory
-- export `grades.csv`
-- keep this as an instructor utility, not the main student-facing path
-
-### Ticket 8: Expression test generator
-
-- generate C++ tests from `expression_test`
+- generate C++ tests from `expression_test` through `CppAdapter`
 - compile with student code
 - parse test results
 
@@ -1412,44 +1731,44 @@ Do not implement grading yet.
 - run program with scripted input
 - compare expected output
 
-### Ticket 10: Private single-ZIP web app
-
-- upload assignment/submission
-- run grading
-- display report
-
-### Ticket 11: Folder/workspace grading
+### Ticket 10: Folder/workspace grading
 
 - grade an existing folder, not only a ZIP
 - preserve ZIP grading as a compatibility path
 - make report output paths explicit
 
-### Ticket 12: Starter workspace creation
+### Ticket 11: Starter workspace creation
 
 - add `starter/` files to the sample assignment
 - create `data/workspaces/demo-student/<assignment-slug>/`
 - copy starter files into the workspace safely
 - list workspace files
 
-### Ticket 13: Basic student workspace web UI
+### Ticket 12: Basic student workspace web UI
 
 - select assignment
 - create/open demo workspace
-- edit source files in a simple browser form
+- edit source files in a simple syntax-highlighted browser editor
 - save changes
 - grade current workspace
 - display feedback
 
-### Ticket 14: Docker sandbox runner
+### Ticket 13: Sandboxed runner
 
-- run grading in container
+- run grading in an OCI container
 - set time/memory/process limits
-- make Docker/Podman the real backend for untrusted code
+- make Podman or Docker the real backend for untrusted code
 
-### Ticket 15: Job queue
+### Ticket 14: Job queue
 
 - add Redis/Celery or RQ
 - async grading jobs
+
+### Ticket 15: Instructor batch and legacy ZIP utilities
+
+- grade all ZIP files in a directory
+- export `grades.csv`
+- keep this as an instructor utility, not the main student-facing path
 
 ### Ticket 16: LTI launch prototype
 
@@ -1467,7 +1786,15 @@ Do not implement grading yet.
 - assignment picker
 - return selected assignment to Canvas
 
-## 13.3 Definition of done for each ticket
+### Post-Rev 1 adapter expansion roadmap
+
+These are future roadmap items after the C++ Rev 1 grader is working:
+
+- JavaAdapter prototype
+- NasmAdapter prototype
+- RiscVAdapter with RARS prototype
+
+## 14.3 Definition of done for each ticket
 
 Every ticket should include:
 
@@ -1479,16 +1806,20 @@ Every ticket should include:
 
 ---
 
-# 14. First Build Target
+# 15. First Build Target
 
 The first real build target should be:
 
 > HamrForge v0.1: Local CLI C++ Grader
 
+This is Rev 1's first implemented adapter, not a commitment to making HamrForge Core C++-only.
+
 ## Features
 
 - `hamrforge validate-assignment`
 - `hamrforge grade`
+- route `language: cpp` to `CppAdapter`
+- clear unsupported-language errors for non-C++ assignments
 - required file checks
 - C++17 compile check
 - generated expression tests
@@ -1517,9 +1848,11 @@ Expected:
 
 This target proves the grader. The next build target should prove the student-workspace model.
 
+This target is intentionally CLI-first because the grading engine has to exist before the workspace product can use it. It should not become the final product center.
+
 ---
 
-# 14.1 Second Build Target
+# 15.1 Second Build Target
 
 The second real build target should be:
 
@@ -1531,7 +1864,7 @@ The second real build target should be:
 - sample assignment `starter/` files
 - create/open a demo student workspace
 - basic browser file list
-- simple text editor for source files
+- simple syntax-highlighted browser editor for source files
 - save file changes
 - grade current workspace
 - display feedback in the browser
@@ -1542,7 +1875,7 @@ Run the private web app, create a demo Byte Class workspace, edit a file, save i
 
 ---
 
-# 15. Long-Term North Star
+# 16. Long-Term North Star
 
 The long-term version of HamrForge is:
 
@@ -1550,7 +1883,7 @@ The long-term version of HamrForge is:
 
 But the first useful version is much smaller:
 
-> A private instructor tool that grades C++ submissions and generates feedback.
+> A private C++ grading engine that can power student workspaces and still handle legacy ZIP submissions.
 
 The next useful student-facing version is:
 
@@ -1572,7 +1905,7 @@ That ladder keeps the project grounded and prevents it from becoming another ove
 
 ---
 
-# 16. MVP Codex Kickoff Prompt
+# 17. MVP Codex Kickoff Prompt
 
 Use this prompt as the first Codex task from the root of the HamrForge repo.
 
@@ -1602,16 +1935,21 @@ Requirements:
    - submission.required_files
    - checks
 
-6. Print clear validation errors.
-7. Add one sample assignment in assignments/byte-class/assignment.yml.
-8. Add basic Python tests.
-9. Update README.md with installation and usage instructions.
-10. Keep the code cross-platform:
+6. Add the first simple language adapter boundary.
+7. Implement only the C++ adapter for Rev 1.
+8. Route `language: cpp` to the C++ adapter.
+9. Return a clear unsupported-language error for any other language.
+10. Print clear validation errors.
+11. Add one sample assignment in assignments/byte-class/assignment.yml.
+12. Add basic Python tests.
+13. Update README.md with installation and usage instructions.
+14. Keep the code cross-platform:
     - use pathlib
     - avoid hardcoded Windows paths
     - avoid shell=True unless there is a clear reason
 
 Do not implement grading yet.
+Do not implement Java, NASM, or RISC-V yet.
 Do not implement Docker or Podman yet.
 Do not implement Canvas or LTI yet.
 Do not build a web app yet.
@@ -1627,11 +1965,30 @@ Definition of done:
 
 ---
 
-# 17. MVP Build Sequence for Codex
+# 18. MVP Build Sequence for Codex
 
 After the kickoff ticket is complete and committed, use these next tickets one at a time.
 
-## Ticket 2: Submission unpacker and file check
+## Ticket 2: Initial LanguageAdapter boundary
+
+```text
+Add the first adapter boundary without expanding Rev 1 beyond C++.
+
+Requirements:
+1. Define a simple LanguageAdapter interface or adapter boundary.
+2. Implement CppAdapter only.
+3. Route assignment language: cpp to CppAdapter.
+4. Return a clear unsupported-language error for any other language.
+5. Keep file parsing, report generation, and orchestration in HamrForge Core.
+6. Add tests for cpp routing and unsupported language errors.
+
+Do not implement Java in Rev 1.
+Do not implement NASM in Rev 1.
+Do not implement RISC-V in Rev 1.
+Do not build a plugin marketplace.
+```
+
+## Ticket 3: Submission unpacker and file check
 
 ```text
 Add a grade command that only performs required file checks.
@@ -1655,10 +2012,10 @@ Requirements:
 Do not implement compile checks yet.
 ```
 
-## Ticket 3: Compile check
+## Ticket 4: C++ compile check
 
 ```text
-Add compile check support.
+Add C++ compile check support through CppAdapter.
 
 Requirements:
 1. Find discovered .cpp files after extraction.
@@ -1672,10 +2029,10 @@ Requirements:
 For now, it is acceptable for this to run locally. Containerized execution comes later.
 ```
 
-## Ticket 4: Batch grading utility
+## Ticket 5: Instructor batch grading utility
 
 ```text
-Add batch grading support.
+Add legacy/instructor batch grading support.
 
 Command:
 hamrforge batch-grade assignments/byte-class submissions/*.zip --out reports/week5
@@ -1688,10 +2045,10 @@ Requirements:
 5. Continue grading other submissions if one fails.
 6. Add tests.
 
-Keep this as an instructor utility. Do not make batch ZIP upload the main web direction.
+Keep this as an instructor utility. Do not make batch ZIP upload the main web direction. If workspace work is ready to proceed, this ticket can move later.
 ```
 
-## Ticket 5: Container runner abstraction
+## Ticket 6: Container runner abstraction
 
 ```text
 Add a sandbox runner abstraction, but do not require Docker Desktop.
@@ -1699,16 +2056,42 @@ Add a sandbox runner abstraction, but do not require Docker Desktop.
 Requirements:
 1. Define a SandboxRunner interface.
 2. Add a LocalUnsafeRunner for development only, clearly marked unsafe.
-3. Add a DockerCliRunner stub or initial implementation if Docker is available.
-4. Design the runner so PodmanCliRunner can be added later.
-5. Keep the grading engine independent of the specific runtime.
-6. Update docs to say HamrForge requires an OCI-compatible sandbox backend for real student submissions.
+3. Add assignment-level or config-level runner selection, defaulting to `local_unsafe` for now.
+4. Keep Docker/Podman unimplemented in this ticket.
+5. Design the runner boundary so DockerCliRunner or PodmanCliRunner can be added later.
+6. Keep the grading engine independent of the specific runtime.
+7. Update docs to say HamrForge requires an OCI-compatible sandbox backend for real student submissions.
 ```
 
-## Ticket 6: Expression tests
+## Ticket 6.1: Podman CLI runner
 
 ```text
-Add generated expression_test support.
+Add the first OCI-backed sandbox runner through the Podman CLI.
+
+Requirements:
+1. Implement PodmanCliRunner.
+2. Mount the temporary grading workspace at /workspace.
+3. Default the image to hamrforge-cpp-runner.
+4. Support assignment runner config with type: podman and optional image.
+5. Apply basic safety flags:
+   - no network
+   - memory limit
+   - CPU limit
+   - process limit
+   - read-only root filesystem
+   - tmpfs /tmp
+   - no-new-privileges
+   - dropped capabilities
+   - non-root user where practical
+6. If podman is missing, return a clear error.
+7. Add tests for command construction without requiring Podman in CI.
+8. Document Podman install and smoke-test steps.
+```
+
+## Ticket 7: C++ expression tests
+
+```text
+Add generated C++ expression_test support through CppAdapter.
 
 Requirements:
 1. Generate a small C++ harness from expression_test YAML.
@@ -1721,7 +2104,7 @@ Requirements:
 8. Add tests.
 ```
 
-## Ticket 7: Console I/O tests
+## Ticket 8: Console I/O tests
 
 ```text
 Add console_io support.
@@ -1738,10 +2121,10 @@ Requirements:
 Future console_io options should let instructors choose stricter exact matching or looser pass-any input variants.
 ```
 
-## Ticket 8: Private one-ZIP web UI
+## Ticket 9: Private legacy one-ZIP web UI
 
 ```text
-Add a minimal FastAPI web app for private instructor testing.
+Add a minimal FastAPI web app for private instructor testing of legacy ZIP uploads.
 
 Requirements:
 1. Show a form with assignment path and one ZIP upload.
@@ -1754,7 +2137,7 @@ Requirements:
 This is a temporary bridge UI. Do not expand it into batch-first product design unless explicitly needed.
 ```
 
-## Ticket 9: Folder/workspace grading
+## Ticket 10: Folder/workspace grading
 
 ```text
 Allow the grader to grade a folder directly.
@@ -1768,7 +2151,7 @@ Requirements:
 6. Add tests for ZIP and folder grading parity.
 ```
 
-## Ticket 10: Starter workspace creation
+## Ticket 11: Starter workspace creation
 
 ```text
 Create server-side student workspaces from assignment starter files.
@@ -1781,7 +2164,7 @@ Requirements:
 5. Add tests.
 ```
 
-## Ticket 11: Basic student workspace web UI
+## Ticket 12: Basic student workspace web UI
 
 ```text
 Add the first student-facing workflow.
@@ -1790,13 +2173,24 @@ Requirements:
 1. List available assignments.
 2. Create/open a demo student workspace.
 3. Show workspace files.
-4. Edit source files in a simple browser textarea.
+4. Edit source files in a simple browser editor with lightweight syntax highlighting.
 5. Save changes.
 6. Grade the current workspace.
 7. Display feedback.
 
 Do not build a full IDE yet.
+Do not add autocomplete, debugging, terminal access, or project-wide search yet.
 Do not add accounts yet.
 Do not add Canvas/LTI yet.
 ```
+
+## Post-Rev 1 adapter expansion roadmap
+
+After the C++ Rev 1 grader is working, future adapter tickets can be explored one at a time:
+
+- JavaAdapter prototype
+- NasmAdapter prototype
+- RiscVAdapter with RARS prototype
+
+Each future adapter should start with a narrow teaching use case, a small assignment fixture, and clear unsupported-feature errors.
 

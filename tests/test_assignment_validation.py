@@ -62,6 +62,62 @@ checks:
     assert "submission.required_files must be a non-empty list." in result.errors
 
 
+def test_runner_setting_must_be_string_or_mapping(tmp_path: Path) -> None:
+    assignment_dir = write_assignment(
+        tmp_path,
+        """
+title: Broken Assignment
+slug: broken
+language: cpp
+standard: c++17
+compiler: g++
+max_score: 100
+runner: []
+submission:
+  required_files:
+    - main.cpp
+checks:
+  - name: Required files
+    type: file_check
+    points: 10
+""",
+    )
+
+    result = validate_assignment(assignment_dir)
+
+    assert not result.is_valid
+    assert "runner must be a non-empty string or mapping." in result.errors
+
+
+def test_runner_image_must_be_non_empty_string(tmp_path: Path) -> None:
+    assignment_dir = write_assignment(
+        tmp_path,
+        """
+title: Broken Assignment
+slug: broken
+language: cpp
+standard: c++17
+compiler: g++
+max_score: 100
+runner:
+  type: podman
+  image: ""
+submission:
+  required_files:
+    - main.cpp
+checks:
+  - name: Required files
+    type: file_check
+    points: 10
+""",
+    )
+
+    result = validate_assignment(assignment_dir)
+
+    assert not result.is_valid
+    assert "runner.image must be a non-empty string." in result.errors
+
+
 def test_missing_assignment_file_is_reported(tmp_path: Path) -> None:
     result = validate_assignment(tmp_path)
 

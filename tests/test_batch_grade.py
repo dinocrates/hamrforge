@@ -36,8 +36,8 @@ def test_batch_grade_writes_csv_summary_and_feedback(tmp_path: Path) -> None:
     with result.grades_csv_path.open(newline="", encoding="utf-8") as input_file:
         rows = list(csv.DictReader(input_file))
     assert [row["filename"] for row in rows] == ["compile-error.zip", "perfect.zip"]
-    assert rows[0]["score"] == "10"
-    assert rows[1]["score"] == "100"
+    assert rows[0]["score"] == "12"
+    assert rows[1]["score"] == "40"
 
     summary = json.loads(result.summary_json_path.read_text(encoding="utf-8"))
     assert summary["total"] == 2

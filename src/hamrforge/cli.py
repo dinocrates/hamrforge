@@ -7,6 +7,8 @@ from typing import Sequence
 from hamrforge.assignment import validate_assignment
 from hamrforge.batch import batch_grade
 from hamrforge.grading import GradeError, grade_submission
+from hamrforge.runner import create_runner
+from hamrforge.workspace import WorkspaceError, create_workspace
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory where report.json and report.md should be written.",
     )
+    grade_parser.add_argument(
+        "--runner",
+        choices=["local_unsafe", "podman"],
+        default=None,
+        help="Override the assignment runner for this grading run.",
+    )
+    grade_parser.add_argument(
+        "--runner-image",
+        default=None,
+        help="Container image to use with --runner podman.",
+    )
     grade_parser.set_defaults(func=_grade_command)
 
     batch_parser = subparsers.add_parser(
@@ -54,6 +67,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory where batch reports should be written.",
     )
     batch_parser.set_defaults(func=_batch_grade_command)
+
+    workspace_parser = subparsers.add_parser(
+        "create-workspace",
+        help="Create a server-side workspace from an assignment starter folder.",
+    )
+    workspace_parser.add_argument("assignment", type=Path, help="Path to the assignment folder.")
+    workspace_parser.add_argument("--owner", default="demo-student", help="Workspace owner key.")
+    workspace_parser.add_argument("--overwrite", action="store_true", help="Replace an existing workspace.")
+    workspace_parser.set_defaults(func=_create_workspace_command)
 
     web_parser = subparsers.add_parser(
         "web",
@@ -87,8 +109,12 @@ def _validate_assignment_command(args: argparse.Namespace) -> int:
 def _grade_command(args: argparse.Namespace) -> int:
     out_dir = args.out or Path("reports") / args.submission.stem
     try:
-        result = grade_submission(args.assignment, args.submission, out_dir)
+        runner = create_runner(args.runner, image=args.runner_image) if args.runner else None
+        result = grade_submission(args.assignment, args.submission, out_dir, runner=runner)
     except GradeError as exc:
+        print(f"Could not grade submission: {exc}")
+        return 1
+    except ValueError as exc:
         print(f"Could not grade submission: {exc}")
         return 1
 
@@ -118,6 +144,17 @@ def _batch_grade_command(args: argparse.Namespace) -> int:
     print(f"- {result.summary_json_path}")
     print(f"- {result.feedback_dir}")
     return 0 if result.failed_count == 0 else 1
+
+
+def _create_workspace_command(args: argparse.Namespace) -> int:
+    try:
+        workspace = create_workspace(args.assignment, args.owner, overwrite=args.overwrite)
+    except WorkspaceError as exc:
+        print(f"Could not create workspace: {exc}")
+        return 1
+
+    print(f"Workspace ready: {workspace.path}")
+    return 0
 
 
 def _web_command(args: argparse.Namespace) -> int:

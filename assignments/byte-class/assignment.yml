@@ -1,9 +1,10 @@
-title: Assignment 5 - Byte Class
+title: Unit 02 - Byte Class Construction
 slug: byte-class
 language: cpp
 standard: c++17
 compiler: g++
-max_score: 100
+max_score: 40
+runner: local_unsafe
 
 submission:
   required_files:
@@ -25,56 +26,62 @@ submission:
 checks:
   - name: Required files
     type: file_check
-    points: 10
+    points: 12
 
   - name: Compiles
     type: compile
-    points: 20
+    points: 6
 
-  - name: Constructor stores value
+  - name: setValue stores integer value
     type: expression_test
-    points: 15
+    points: 3
     include:
       - Byte.h
     setup: |
-      Byte b(13);
+      Byte b;
+      b.setValue(99);
     expect:
       expression: b.toInt()
-      equals: 13
+      equals: 99
 
-  - name: Addition operator works
+  - name: at returns expected bits
     type: expression_test
-    points: 15
+    points: 3
     include:
       - Byte.h
     setup: |
-      Byte a(5);
-      Byte b(7);
-      Byte c = a + b;
+      Byte b;
+      b.setValue(99);
     expect:
-      expression: c.toInt()
-      equals: 12
+      expression: b.at(0) == 1 && b.at(1) == 1 && b.at(2) == 0 && b.at(3) == 0 && b.at(4) == 0 && b.at(5) == 1 && b.at(6) == 1 && b.at(7) == 0
+      equals: true
 
-  - name: Edge case addition
+  - name: toString returns reversed bit string
     type: expression_test
-    points: 20
+    points: 2
     include:
       - Byte.h
     setup: |
-      Byte a(128);
-      Byte b(1);
-      Byte c = a + b;
+      Byte b;
+      b.setValue(99);
     expect:
-      expression: c.toInt()
-      equals: 129
+      expression: b.toString()
+      equals: "01100011"
 
-  - name: Menu accepts user input
+  - name: Boundary value 255 works
+    type: expression_test
+    points: 2
+    include:
+      - Byte.h
+    setup: |
+      Byte b;
+      b.setValue(255);
+    expect:
+      expression: b.toInt() == 255 && b.toString() == "11111111"
+      equals: true
+
+  - name: Program runs to completion
     type: console_io
-    points: 20
-    input: |
-      1
-      5
-      7
-      0
-    expected_contains:
-      - "12"
+    points: 12
+    input: ""
+    expected_contains: []
