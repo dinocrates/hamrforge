@@ -10,6 +10,7 @@ from typing import Any
 from hamrforge.assignment import load_assignment, validate_assignment
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.models import CheckResult, GradeResult
+from hamrforge.runner import SandboxRunner
 
 
 class WorkspaceError(Exception):
@@ -46,6 +47,7 @@ class Attempt:
     report_md_path: Path
     snapshot_path: Path
     result: GradeResult
+    runner: str = "assignment default"
 
 
 def create_workspace(assignment_dir: Path, owner_key: str, overwrite: bool = False) -> Workspace:
@@ -129,16 +131,46 @@ def read_workspace_file(workspace: Workspace, relative_path: str) -> str:
 
 def write_workspace_file(workspace: Workspace, relative_path: str, content: str) -> None:
     path = _resolve_inside(workspace.path, relative_path)
-    if ".hamrforge" in path.relative_to(workspace.path).parts:
-        raise WorkspaceError("cannot edit HamrForge metadata files")
-    if not _is_editable(path):
-        raise WorkspaceError(f"workspace file is not editable text: {relative_path}")
+    _ensure_student_file(workspace, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     _touch_metadata(workspace)
 
 
-def grade_workspace(workspace: Workspace) -> Attempt:
+def create_workspace_file(workspace: Workspace, relative_path: str, content: str = "") -> None:
+    path = _resolve_inside(workspace.path, relative_path)
+    _ensure_student_file(workspace, path)
+    if path.exists():
+        raise WorkspaceError(f"workspace file already exists: {relative_path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    _touch_metadata(workspace)
+
+
+def rename_workspace_file(workspace: Workspace, old_relative_path: str, new_relative_path: str) -> None:
+    old_path = _resolve_inside(workspace.path, old_relative_path)
+    new_path = _resolve_inside(workspace.path, new_relative_path)
+    _ensure_student_file(workspace, old_path)
+    _ensure_student_file(workspace, new_path)
+    if not old_path.exists() or not old_path.is_file():
+        raise WorkspaceError(f"workspace file does not exist: {old_relative_path}")
+    if new_path.exists():
+        raise WorkspaceError(f"workspace file already exists: {new_relative_path}")
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.rename(new_path)
+    _touch_metadata(workspace)
+
+
+def delete_workspace_file(workspace: Workspace, relative_path: str) -> None:
+    path = _resolve_inside(workspace.path, relative_path)
+    _ensure_student_file(workspace, path)
+    if not path.exists() or not path.is_file():
+        raise WorkspaceError(f"workspace file does not exist: {relative_path}")
+    path.unlink()
+    _touch_metadata(workspace)
+
+
+def grade_workspace(workspace: Workspace, runner: SandboxRunner | None = None, runner_name: str = "assignment default") -> Attempt:
     attempt_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     attempts_dir = workspace.path / ".hamrforge" / "attempts"
     attempt_dir = attempts_dir / attempt_id
@@ -148,7 +180,7 @@ def grade_workspace(workspace: Workspace) -> Attempt:
 
     _copy_snapshot(workspace.path, snapshot_dir)
     try:
-        result = grade_submission(workspace.assignment_path, workspace.path, report_dir)
+        result = grade_submission(workspace.assignment_path, snapshot_dir, report_dir, runner=runner)
     except GradeError:
         shutil.rmtree(attempt_dir, ignore_errors=True)
         raise
@@ -161,6 +193,7 @@ def grade_workspace(workspace: Workspace) -> Attempt:
         "score": result.score,
         "max_score": result.max_score,
         "flags": result.flags,
+        "runner": runner_name,
         "report_json_path": str(result.report_json_path),
         "report_md_path": str(result.report_md_path),
         "snapshot_path": str(snapshot_dir),
@@ -173,17 +206,28 @@ def grade_workspace(workspace: Workspace) -> Attempt:
         report_md_path=result.report_md_path,
         snapshot_path=snapshot_dir,
         result=result,
+        runner=runner_name,
     )
 
 
 def latest_attempt(workspace: Workspace) -> Attempt | None:
+    attempts = list_attempts(workspace)
+    return attempts[0] if attempts else None
+
+
+def list_attempts(workspace: Workspace) -> list[Attempt]:
     attempts_dir = workspace.path / ".hamrforge" / "attempts"
     if not attempts_dir.exists():
-        return None
-    attempts = sorted(path for path in attempts_dir.iterdir() if path.is_dir())
-    if not attempts:
-        return None
-    attempt_dir = attempts[-1]
+        return []
+    attempts = [
+        attempt
+        for attempt_dir in sorted((path for path in attempts_dir.iterdir() if path.is_dir()), reverse=True)
+        if (attempt := _attempt_from_dir(attempt_dir)) is not None
+    ]
+    return attempts
+
+
+def _attempt_from_dir(attempt_dir: Path) -> Attempt | None:
     metadata_path = attempt_dir / "attempt.json"
     if not metadata_path.exists():
         return None
@@ -196,6 +240,7 @@ def latest_attempt(workspace: Workspace) -> Attempt | None:
         report_md_path=Path(metadata["report_md_path"]),
         snapshot_path=Path(metadata["snapshot_path"]),
         result=result,
+        runner=str(metadata.get("runner", "assignment default")),
     )
 
 
@@ -246,6 +291,16 @@ def _resolve_inside(root: Path, relative_path: str) -> Path:
     if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
         raise WorkspaceError(f"path escapes workspace: {relative_path}")
     return resolved_path
+
+
+def _ensure_student_file(workspace: Workspace, path: Path) -> None:
+    relative = path.relative_to(workspace.path)
+    if ".hamrforge" in relative.parts:
+        raise WorkspaceError("cannot modify HamrForge metadata files")
+    if not path.name:
+        raise WorkspaceError("workspace file path cannot be empty")
+    if not _is_editable(path):
+        raise WorkspaceError(f"workspace file is not an editable text type: {relative.as_posix()}")
 
 
 def _safe_segment(value: str) -> str:

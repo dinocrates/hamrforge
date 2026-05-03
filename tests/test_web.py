@@ -24,7 +24,11 @@ def test_web_index_loads_upload_form() -> None:
 
     assert response.status_code == 200
     assert "HamrForge" in response.text
+    assert "C++ Grading Diagnostics" in response.text
     assert "Submission ZIP" in response.text
+    assert 'name="runner"' in response.text
+    assert "local_unsafe runs student code directly" in response.text
+    assert "/static/diagnostic.css" in response.text
 
 
 def test_web_grades_uploaded_zip(tmp_path: Path) -> None:
@@ -34,14 +38,44 @@ def test_web_grades_uploaded_zip(tmp_path: Path) -> None:
     with submission.open("rb") as input_file:
         response = client.post(
             "/grade",
-            data={"assignment": "assignments/byte-class"},
+            data={"assignment": "assignments/byte-class", "runner": "local_unsafe"},
             files={"submission": ("perfect.zip", input_file, "application/zip")},
         )
 
     assert response.status_code == 200
     assert "Score: 40 / 40" in response.text
+    assert "100.0%" in response.text
+    assert "Runner" in response.text
+    assert "local_unsafe" in response.text
     assert "Program runs to completion" in response.text
+    assert "Output and Reports" in response.text
+    assert "Compiler stdout" in response.text
+    assert "Compiler stderr" in response.text
+    assert "Program stdout" in response.text
+    assert "Runner logs" in response.text
+    assert "Raw report.json" in response.text
+    assert "Rendered report.md" in response.text
     assert "Markdown report" in response.text
+
+
+def test_web_shows_compiler_errors_in_diagnostic_panels(tmp_path: Path) -> None:
+    client = TestClient(app)
+    submission = zip_folder(Path("fixtures/compile-error"), tmp_path / "compile-error.zip")
+
+    with submission.open("rb") as input_file:
+        response = client.post(
+            "/grade",
+            data={"assignment": "assignments/byte-class", "runner": "local_unsafe"},
+            files={"submission": ("compile-error.zip", input_file, "application/zip")},
+        )
+
+    assert response.status_code == 200
+    assert "Score: 12 / 40" in response.text
+    assert "FAIL" in response.text
+    assert "Compiler stderr" in response.text
+    assert "Your code did not compile." in response.text
+    assert "expected" in response.text
+    assert "check-failed" in response.text
 
 
 def test_web_reports_bad_zip_error(tmp_path: Path) -> None:
@@ -77,6 +111,46 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     assert "CodeMirror.fromTextArea" in create_response.text
     assert "Assignment instructions" in create_response.text
     assert "Build a C++ `Byte` class" in create_response.text
+    assert 'name="runner"' in create_response.text
+    assert "New file" in create_response.text
+    assert "Rename selected" in create_response.text
+    assert "Delete Selected" in create_response.text
+
+    create_file_response = client.post(
+        "/workspace/file/create",
+        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "new_file_path": "helpers.cpp"},
+    )
+    assert create_file_response.status_code == 200
+    assert "File created." in create_file_response.text
+    assert "helpers.cpp" in create_file_response.text
+
+    rename_file_response = client.post(
+        "/workspace/file/rename",
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "file_path": "helpers.cpp",
+            "new_file_path": "helpers.hpp",
+        },
+    )
+    assert rename_file_response.status_code == 200
+    assert "File renamed." in rename_file_response.text
+    assert "helpers.hpp" in rename_file_response.text
+
+    delete_file_response = client.post(
+        "/workspace/file/delete",
+        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "file_path": "helpers.hpp"},
+    )
+    assert delete_file_response.status_code == 200
+    assert "File deleted." in delete_file_response.text
+    assert "helpers.hpp" not in delete_file_response.text
+
+    unsafe_file_response = client.post(
+        "/workspace/file/create",
+        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "new_file_path": "../nope.cpp"},
+    )
+    assert unsafe_file_response.status_code == 400
+    assert "escapes workspace" in unsafe_file_response.text
 
     save_response = client.post(
         "/workspace/save",
@@ -93,9 +167,45 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
 
     grade_response = client.post(
         "/workspace/grade",
-        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "selected_file": "main.cpp"},
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "selected_file": "main.cpp",
+            "runner": "local_unsafe",
+        },
     )
 
     assert grade_response.status_code == 200
-    assert "Workspace graded." in grade_response.text
+    assert "Workspace saved and graded." in grade_response.text
     assert "Score: 40 / 40" in grade_response.text
+    assert "Attempt History" in grade_response.text
+    assert "Latest" in grade_response.text
+    assert "Best" in grade_response.text
+    assert "Total Attempts" in grade_response.text
+    assert "report.md" in grade_response.text
+    assert "report.json" in grade_response.text
+    assert "Runner" in grade_response.text
+    assert "local_unsafe" in grade_response.text
+
+    grade_after_edit_response = client.post(
+        "/workspace/grade",
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "selected_file": "Byte.cpp",
+            "file_path": "Byte.cpp",
+            "content": Path("fixtures/compile-error/Byte.cpp").read_text(encoding="utf-8"),
+            "runner": "local_unsafe",
+        },
+    )
+
+    assert grade_after_edit_response.status_code == 200
+    assert "Workspace saved and graded." in grade_after_edit_response.text
+    assert "Score: 12 / 40" in grade_after_edit_response.text
+    assert "Best" in grade_after_edit_response.text
+    assert "40 / 40" in grade_after_edit_response.text
+    assert "Total Attempts" in grade_after_edit_response.text
+    assert "2" in grade_after_edit_response.text
+    assert "Your code did not compile." in grade_after_edit_response.text
+    assert 'id="workspace-grade-form"' in grade_after_edit_response.text
+    assert 'id="workspace-grade-content"' in grade_after_edit_response.text

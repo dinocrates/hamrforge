@@ -706,6 +706,50 @@ The private web app can create a demo workspace from `assignments/byte-class/sta
 
 Run HamrForge as a private web app where a student can edit starter files and grade the current workspace.
 
+### Private Diagnostic Web UI
+
+Before the final student workspace experience exists, HamrForge should keep a private diagnostic web UI for instructor/developer testing.
+
+This diagnostic UI is not the final student-facing product. It is a control-panel style lab bench for Stephen to quickly test assignments, runners, ZIP fixtures, workspace grading, compiler output, and reports.
+
+The diagnostic UI should be:
+
+- dark, high contrast, and arcade/control-panel inspired
+- red-accented and slightly playful without becoming noisy
+- card-based, compact, and readable on a laptop screen
+- clear about which runner is being used
+- explicit when `local_unsafe` is selected
+- useful for reading compiler errors, program output, runner messages, `report.json`, and `report.md`
+
+It should include:
+
+- HamrForge header and C++ diagnostics subtitle
+- assignment path input
+- ZIP upload
+- runner selector
+- score summary with percentage, status, runner, and duration when available
+- check cards with pass/fail text and points
+- collapsible monospace output panels for compiler output, program output, runner logs, and raw reports
+
+The diagnostic UI should support runner selection for both legacy ZIP grading and workspace grading. This lets the instructor compare `local_unsafe` and `podman` behavior while the sandbox path is still being proven. Workspace grading should grade an attempt snapshot, not the mutable workspace folder directly.
+
+The diagnostic workspace should also support basic repo-like file management:
+
+- create files
+- rename files
+- delete files
+- keep all operations inside the workspace root
+- reject modifications to `.hamrforge/`
+- restrict editable file types while the MVP is young
+
+This supports the student-facing model where each student has a private assignment workspace that feels like a small project repo, without requiring Git in Rev 1.
+
+Each workspace should show assignment-scoped attempt history. The early file-based version should list attempts newest-first and show latest score, best score, runner used, flags, and report links. History belongs to one student assignment workspace, not to the global assignment definition.
+
+Security guardrail: the private diagnostic UI may use visible `owner_key` and `assignment_slug` values in routes while running locally, but those values must not be treated as access control in any real student deployment. Before HamrForge is exposed to students, every workspace, file operation, grading action, and report route must check the authenticated user's right to access that workspace. Students should only access their own assignment workspaces; instructors/admins may need controlled access to student workspaces. Workspace files should not be served directly as static files.
+
+This UI should stay simple and maintainable. Do not turn it into accounts, Canvas/LTI, a database-backed dashboard, or a full IDE.
+
 ### Intended user
 
 One local/demo student identity at first. Real accounts and Canvas identities come later.
