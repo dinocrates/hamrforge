@@ -64,6 +64,18 @@ def test_grade_directory_submission_matches_zip_behavior(tmp_path: Path) -> None
     assert all(check.passed for check in result.checks)
 
 
+def test_grade_byte_constructors_starter_submission(tmp_path: Path) -> None:
+    result = grade_submission(
+        Path("assignments/byte-constructors"),
+        Path("assignments/byte-constructors/starter"),
+        tmp_path / "reports",
+    )
+
+    assert result.score == 40
+    assert result.max_score == 40
+    assert all(check.passed for check in result.checks)
+
+
 def test_grade_missing_files_submission_loses_file_check_points(tmp_path: Path) -> None:
     submission = zip_folder(Path("fixtures/missing-files"), tmp_path / "missing-files.zip")
 

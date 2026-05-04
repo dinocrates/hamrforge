@@ -25,10 +25,45 @@ def test_web_index_loads_upload_form() -> None:
     assert response.status_code == 200
     assert "HamrForge" in response.text
     assert "C++ Grading Diagnostics" in response.text
+    assert "Semester Assignments" in response.text
+    assert "Unit 02 - Byte Class Construction" in response.text
+    assert "Unit 03 - Byte Overloaded Constructors" in response.text
+    assert "Workspace" in response.text
+    assert "Diagnostic Tools" in response.text
     assert "Submission ZIP" in response.text
     assert 'name="runner"' in response.text
     assert "local_unsafe runs student code directly" in response.text
     assert "/static/diagnostic.css" in response.text
+
+
+def test_web_landing_page_shows_existing_workspace_scores(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(workspace_module, "WORKSPACES_DIR", tmp_path / "workspaces")
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/workspace/create",
+        data={"assignment": "assignments/byte-class", "owner_key": "demo-student"},
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+
+    grade_response = client.post(
+        "/workspace/grade",
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "selected_file": "main.cpp",
+            "runner": "local_unsafe",
+        },
+    )
+    assert grade_response.status_code == 200
+
+    response = client.get("/", params={"owner_key": "demo-student"})
+
+    assert response.status_code == 200
+    assert "Workspace ready" in response.text
+    assert "Open Workspace" in response.text
+    assert "40 / 40" in response.text
 
 
 def test_web_grades_uploaded_zip(tmp_path: Path) -> None:
@@ -115,6 +150,8 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     assert "New file" in create_response.text
     assert "Rename selected" in create_response.text
     assert "Delete Selected" in create_response.text
+    assert "Save and Run Program" in create_response.text
+    assert "Run Output" in create_response.text
 
     create_file_response = client.post(
         "/workspace/file/create",
@@ -165,6 +202,26 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     assert "File saved." in save_response.text
     assert "Save File" in save_response.text
 
+    run_response = client.post(
+        "/workspace/run",
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "selected_file": "main.cpp",
+            "file_path": "main.cpp",
+            "content": Path("assignments/byte-class/starter/main.cpp").read_text(encoding="utf-8"),
+            "runner": "local_unsafe",
+        },
+    )
+
+    assert run_response.status_code == 200
+    assert "Workspace saved and program run." in run_response.text
+    assert "Run Output" in run_response.text
+    assert "Program finished" in run_response.text
+    assert "Int:    99" in run_response.text
+    assert "String: 01100011" in run_response.text
+    assert "No grade attempts yet." in run_response.text
+
     grade_response = client.post(
         "/workspace/grade",
         data={
@@ -178,7 +235,9 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     assert grade_response.status_code == 200
     assert "Workspace saved and graded." in grade_response.text
     assert "Score: 40 / 40" in grade_response.text
+    assert "Latest Result" in grade_response.text
     assert "Attempt History" in grade_response.text
+    assert "Latest Detailed Diagnostics" in grade_response.text
     assert "Latest" in grade_response.text
     assert "Best" in grade_response.text
     assert "Total Attempts" in grade_response.text

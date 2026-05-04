@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge New Section</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>New Section Setup</span>
+    </div>
+    <div class="meta"><a href="instructor-courses.html">My Sections</a> · Stephen Hamrick</div>
+  </header>
+  <div class="app-toolbar">
+    <div class="toolbar-content">
+      <nav class="main-nav" aria-label="Instructor navigation">
+        <a href="instructor-dashboard.html">Overview</a>
+        <a href="assignment-results.html">Results</a>
+        <a href="assignment-builder.html">Assignment Builder</a>
+        <a href="#">Students</a>
+        <a href="#">Settings</a>
+      </nav>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">Create New Section</div>
+      <div class="content builder-layout">
+        <aside class="card">
+          <h2>Setup Steps</h2>
+          <nav class="builder-menu">
+            <a class="active" href="#">Section Info</a>
+            <a href="#">Copy Materials</a>
+            <a href="#">Canvas Link</a>
+            <a href="#">Roster</a>
+            <a href="#">Review</a>
+          </nav>
+        </aside>
+        <section class="grid">
+          <article class="card">
+            <h1>Section Info</h1>
+            <p class="muted">Create the course section first. Copying assignments and Canvas connection details happen as part of this setup flow.</p>
+            <div class="form-grid">
+              <label>
+                Course
+                <select>
+                  <option>CS 102 - Object-Oriented C++</option>
+                  <option>CS 101 - Programming Fundamentals</option>
+                </select>
+              </label>
+              <label>
+                Semester
+                <select>
+                  <option>Spring 2026</option>
+                  <option>Summer 2026</option>
+                  <option>Fall 2026</option>
+                </select>
+              </label>
+              <label>
+                Section number
+                <input value="03">
+              </label>
+              <label>
+                Meeting info
+                <input value="Tue/Thu 10:00 AM">
+              </label>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Copy Materials</h2>
+            <p class="muted">Optional: start this section from a previous section or course shell. Due dates and publish states can be adjusted after copying.</p>
+            <div class="form-grid">
+              <label>
+                Copy from
+                <select>
+                  <option>CS 102 · Fall 2025</option>
+                  <option>CS 102-01 · Spring 2026</option>
+                  <option>Blank section</option>
+                </select>
+              </label>
+              <label>
+                Materials
+                <select>
+                  <option>Assignments, starter files, and checks</option>
+                  <option>Assignments only</option>
+                  <option>Starter files only</option>
+                </select>
+              </label>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Canvas Link</h2>
+            <p class="muted">This fake panel represents the future LTI setup information. Eventually HamrForge should generate or display the values needed to connect this section to Canvas.</p>
+            <div class="metric-row">
+              <div class="metric"><span>Tool URL</span><strong>/lti/launch</strong></div>
+              <div class="metric"><span>Deep Link</span><strong>enabled</strong></div>
+              <div class="metric"><span>Grade Passback</span><strong>planned</strong></div>
+            </div>
+            <pre class="output">Canvas Developer Key / LTI 1.3 setup
+
+Issuer: canvas.example.edu
+Client ID: pending
+Deployment ID: pending
+Launch URL: https://hamrforge.example.edu/lti/launch
+Deep Link URL: https://hamrforge.example.edu/lti/deep-link
+JWKS URL: https://hamrforge.example.edu/lti/jwks
+
+This is placeholder information for the prototype.</pre>
+          </article>
+          <div class="actions">
+            <a class="button" href="instructor-courses.html">Cancel</a>
+            <button>Save Draft Section</button>
+            <button class="primary">Create Section</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

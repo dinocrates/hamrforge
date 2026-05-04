@@ -19,6 +19,13 @@ def test_sample_assignment_is_valid() -> None:
     assert result.errors == []
 
 
+def test_byte_constructors_assignment_is_valid() -> None:
+    result = validate_assignment(Path("assignments/byte-constructors"))
+
+    assert result.is_valid
+    assert result.errors == []
+
+
 def test_missing_required_fields_are_reported(tmp_path: Path) -> None:
     assignment_dir = write_assignment(
         tmp_path,

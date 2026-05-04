@@ -1,0 +1,100 @@
+title: Unit 03 - Byte Overloaded Constructors
+slug: byte-constructors
+language: cpp
+standard: c++17
+compiler: g++
+max_score: 40
+runner: local_unsafe
+
+submission:
+  required_files:
+    - main.cpp
+    - Byte.h
+    - Byte.cpp
+  accepted_extensions:
+    - .cpp
+    - .h
+    - .hpp
+    - .zip
+  ignored_paths:
+    - .vs
+    - Debug
+    - Release
+    - x64
+    - __MACOSX
+
+checks:
+  - name: Required files
+    type: file_check
+    points: 12
+
+  - name: Compiles
+    type: compile
+    points: 6
+
+  - name: Integer constructor stores value
+    type: expression_test
+    points: 4
+    include:
+      - Byte.h
+    setup: |
+      Byte b(7);
+    expect:
+      expression: b.toInt()
+      equals: 7
+
+  - name: Default constructor initializes zero
+    type: expression_test
+    points: 3
+    include:
+      - Byte.h
+    setup: |
+      Byte b;
+    expect:
+      expression: b.toInt() == 0 && b.toString() == "00000000"
+      equals: true
+
+  - name: Array constructor accepts valid bits
+    type: expression_test
+    points: 4
+    include:
+      - Byte.h
+    setup: |
+      int bits[8] = {1, 1, 1, 0, 0, 0, 0, 0};
+      Byte b(bits);
+    expect:
+      expression: b.toInt()
+      equals: 7
+
+  - name: Array constructor rejects invalid bits
+    type: expression_test
+    points: 3
+    include:
+      - Byte.h
+    setup: |
+      int bits[8] = {1, 1, 2, 0, 0, 0, 0, 0};
+      Byte b(bits);
+    expect:
+      expression: b.toInt()
+      equals: 0
+
+  - name: Arithmetic methods return Byte values
+    type: expression_test
+    points: 4
+    include:
+      - Byte.h
+    setup: |
+      Byte b(7);
+      Byte added = b.add(2);
+      Byte subbed = b.sub(3);
+      Byte multiplied = b.mul(3);
+      Byte divided = b.div(2);
+    expect:
+      expression: added.toInt() == 9 && subbed.toInt() == 4 && multiplied.toInt() == 21 && divided.toInt() == 3
+      equals: true
+
+  - name: Program runs to completion
+    type: console_io
+    points: 4
+    input: ""
+    expected_contains: []

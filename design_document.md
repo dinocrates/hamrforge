@@ -10,6 +10,8 @@ HamrForge is an open-source, repo-based student coding workspace and autograding
 
 The project begins with a local/home-server grading engine and scaffolds upward toward the real product goal: a student-facing, server-hosted assignment workspace system that can eventually launch from Canvas through LTI.
 
+When users first enter HamrForge, they should not land directly inside a single assignment or a raw diagnostic tool. Students and instructors should first see the courses they currently belong to, plus access to previous courses when appropriate. From there, a user chooses a course/semester/section context and then sees the assignments, workspaces, analytics, and tools for that context.
+
 Instructor ZIP and batch grading are useful early utilities and compatibility paths. They help test the engine, support legacy submissions, and give instructors a fallback workflow. They are not the final center of the product.
 
 The core promise:
@@ -150,7 +152,7 @@ The staged path is:
 Local CLI grading engine
 → folder/workspace grading
 → starter workspace creation
-→ basic student workspace web UI
+→ basic course portal and section-aware workspace web UI
 → sandboxed runner
 → job queue
 → instructor batch/legacy ZIP utilities
@@ -192,6 +194,7 @@ Later versions may support:
 - Canvas grade passback
 - Deep Linking assignment selection
 - instructor dashboards
+- instructor assignment builder for creating assignment metadata, starter files, required files, and checks
 - student attempt history
 - server-side student workspaces/repos
 - basic browser file editor
@@ -213,7 +216,7 @@ Do not build these first:
 - district deployment
 - Canvas LTI
 - roster sync
-- analytics dashboards
+- advanced analytics dashboards
 - AI grading
 - plagiarism detection
 
@@ -380,6 +383,83 @@ RISC-V adapter checks may include:
 
 HamrForge's primary student-facing model is an assignment workspace, not a ZIP upload form.
 
+## 3.1 Course, Semester, and Section Portal
+
+HamrForge should be organized around courses, semesters, and sections before it is organized around individual assignments.
+
+When a student logs in or launches HamrForge directly, the first product screen should show that student's current courses as cards. Previous courses may also be available in a separate area or filter. A student should choose a course first, then see the assignments for that course/semester/section.
+
+When an instructor logs in, the first product screen should show the instructor's current courses and sections as cards. Instructors may teach multiple sections of the same course in the same semester, and may also need to look back at previous semesters. The product should make that distinction clear:
+
+- course: the catalog or class shell, such as `CS 102`
+- semester/term: the offering period, such as `Spring 2026`
+- section: a specific roster/group, such as `CS 102-01` or `CS 102-02`
+- assignment: the reusable assignment definition or repo
+- assignment publication: an assignment made available to one or more sections
+
+The dropdown or quick selector for semester/section is useful once the user is already inside a course context. It should not be the primary first-login experience. First login should feel like a course portal, similar in spirit to Canvas course cards, while the selector acts as a fast switcher after context has been chosen.
+
+### Student first-login flow
+
+```text
+Student logs in or launches HamrForge
+→ sees current course cards
+→ optionally sees previous courses
+→ opens a course
+→ sees assignment cards for that course/section
+→ opens an assignment workspace
+```
+
+### Instructor first-login flow
+
+```text
+Instructor logs in or launches HamrForge
+→ sees current course/section cards
+→ optionally sees previous semesters
+→ opens a course section or all-sections view
+→ sees assignment cards plus section analytics
+→ opens results, student workspaces, or assignment builder
+```
+
+## 3.2 Navigation Model
+
+HamrForge should distinguish global navigation from course-specific navigation.
+
+Global navigation appears when the user is choosing where to go:
+
+- course dashboard
+- current courses
+- previous courses
+- account/profile/help
+
+Course-specific navigation appears after the user opens a course or section:
+
+Student course navigation may include:
+
+- Assignments
+- Workspace
+- Grades/Attempts
+- Help
+
+Instructor course navigation may include:
+
+- Overview
+- Results
+- Assignment Builder
+- Students
+- Settings
+
+The selected course, semester, and section should remain visible in the course-specific UI. A quick selector can make it easy for instructors to jump between `CS 102-01`, `CS 102-02`, and `All Sections`, but the selected context should also be reflected in headings, analytics, result tables, and assignment lists.
+
+The UI should avoid making a single assignment page carry too much global responsibility. The product ladder should be:
+
+```text
+course portal
+→ course/section dashboard
+→ assignment list
+→ assignment workspace or results
+```
+
 Each assignment repo should provide starter files. When a student opens or launches an assignment, HamrForge creates or opens that student's private workspace for that assignment. In the early home-server version, a workspace can be a managed server folder under local storage. Later, the workspace may become Git-backed or otherwise versioned so student work can be tracked, restored, and moved more easily.
 
 Students should eventually be able to:
@@ -406,7 +486,7 @@ assignment repo
 
 ZIP and batch grading should remain available for early development, legacy submissions, and instructor-only workflows. They should not drive the main web product design.
 
-## 3.1 Submission vs. Attempt vs. Workspace
+## 3.3 Submission vs. Attempt vs. Workspace
 
 `workspace`:
 The current editable project folder for one student and one assignment. It contains the files the student sees and edits.
@@ -417,7 +497,7 @@ A graded point-in-time snapshot of a workspace or uploaded ZIP. Attempts preserv
 `submission`:
 A compatibility input source for the grader. A submission may be an uploaded ZIP or a workspace snapshot. In the student-facing product, workspace snapshots should become the normal submission source.
 
-## 3.2 Workspace Lifecycle
+## 3.4 Workspace Lifecycle
 
 ```text
 Assignment published
@@ -431,6 +511,54 @@ Assignment published
 ```
 
 For early prototypes, "student" may mean a demo `owner_key`, and "worker" may mean the same process running locally. The lifecycle should still be modeled this way so the project can grow into queues, sandboxes, accounts, and Canvas without changing the product concept.
+
+## 3.5 Instructor Assignment Builder
+
+HamrForge should eventually include an instructor-facing assignment builder. The assignment builder is not a replacement for the repo-first model; it is a friendlier way for instructors to create and maintain the same underlying assignment files.
+
+The builder should help instructors manage:
+
+- assignment title, slug, language, points, and due date
+- instructions shown to students
+- starter files and folders
+- required files
+- check definitions
+- runner settings
+- publish/draft state
+- section-specific publication settings
+- copying/importing assignments from previous courses, semesters, sections, or libraries
+
+The builder should still keep assignments portable. The output should be inspectable assignment repo content, not opaque database-only courseware.
+
+In early prototypes, this can be a static UI or a simple form surface. It should not delay the working C++ grading loop. The first practical goal is to discover what assignment-authoring workflow feels understandable to a teacher.
+
+## 3.6 Course Import and Copy
+
+Instructors should be able to reuse work across semesters and sections. HamrForge should support importing or copying assignments and course materials from a previous course, previous semester, another section, or a shared assignment library.
+
+Importing and copying should usually live inside a broader **New Section** or **Section Setup** workflow, not as loose buttons on the course dashboard. When an instructor is preparing a new section, HamrForge should guide them through:
+
+```text
+create/select course
+→ choose term/semester
+→ create section number and meeting/context info
+→ optionally copy materials from a previous course/section
+→ configure Canvas/LTI connection details when available
+→ review and create/publish section
+```
+
+Common workflows should include:
+
+- copy one assignment from a previous semester into the current section
+- copy multiple assignments from a previous course shell
+- copy an assignment from one section to another
+- import starter files, instructions, required files, and checks together
+- adjust due dates, points, publish state, and section-specific settings after copying
+- preserve the original assignment repo/history where practical
+
+This should be teacher-friendly and fast. A common instructor workflow is building the course while teaching it, so copying a known-good assignment forward should not require manually duplicating folders, editing YAML by hand, or recreating checks one at a time.
+
+The same section setup surface should eventually show the information needed to connect the section to Canvas through LTI 1.3. This is a larger feature and should not be implemented in Rev 1, but the product model should reserve space for it so section creation, assignment publication, roster mapping, launch URLs, deep linking, and grade passback all fit together later.
 
 ---
 
@@ -704,7 +832,18 @@ The private web app can create a demo workspace from `assignments/byte-class/sta
 
 ### Goal
 
-Run HamrForge as a private web app where a student can edit starter files and grade the current workspace.
+Run HamrForge as a private web app where a user first chooses a course/section context, then a student can open an assignment, edit starter files, run the program, and grade the current workspace.
+
+The first web UI does not need real accounts yet, but it should model the eventual shape:
+
+```text
+fake login or demo identity
+→ course cards
+→ course/section assignment cards
+→ assignment workspace
+```
+
+This keeps the product closer to how instructors and students experience real LMS tools: users start from courses, not from raw assignment folders.
 
 ### Private Diagnostic Web UI
 
@@ -746,34 +885,60 @@ This supports the student-facing model where each student has a private assignme
 
 Each workspace should show assignment-scoped attempt history. The early file-based version should list attempts newest-first and show latest score, best score, runner used, flags, and report links. History belongs to one student assignment workspace, not to the global assignment definition.
 
+The diagnostic landing page should discover valid assignment folders under `assignments/` so instructors can add new assignments during the semester without changing application code. For a given `owner_key`, the page should show each available assignment, whether that student's workspace exists, and latest/best scores when attempts exist.
+
+As the diagnostic UI grows, keep the student-like flow readable: the landing page should emphasize semester assignments, the workspace page should emphasize the editor and current grading result, and lower-level diagnostics such as ZIP grading, raw logs, and full reports should be tucked behind collapsible panels.
+
 Security guardrail: the private diagnostic UI may use visible `owner_key` and `assignment_slug` values in routes while running locally, but those values must not be treated as access control in any real student deployment. Before HamrForge is exposed to students, every workspace, file operation, grading action, and report route must check the authenticated user's right to access that workspace. Students should only access their own assignment workspaces; instructors/admins may need controlled access to student workspaces. Workspace files should not be served directly as static files.
 
 This UI should stay simple and maintainable. Do not turn it into accounts, Canvas/LTI, a database-backed dashboard, or a full IDE.
 
 ### Intended user
 
-One local/demo student identity at first. Real accounts and Canvas identities come later.
+One local/demo student identity at first, plus a fake instructor view for product testing. Real accounts and Canvas identities come later.
 
 ### Workflow
 
 ```text
 Student opens HamrForge web app
+→ selects a current course card
+→ sees assignment cards for that course/section
 → selects or launches an assignment
 → edits files in a server-side workspace
 → saves changes
+→ clicks Run for immediate program output
 → clicks Grade
 → sees score and feedback
 ```
 
+Instructor prototype workflow:
+
+```text
+Instructor opens HamrForge web app
+→ sees current course/section cards
+→ opens a section or all-sections view
+→ sees assignment cards and basic analytics
+→ opens results or assignment builder
+```
+
 ### Features
 
+- fake login/front-door page for local product testing
+- current-course cards for students and instructors
+- previous-course affordance, even if fake/static at first
+- course/semester/section context display
+- course-specific top navigation after a course is selected
+- instructor import/copy affordance for reusing assignments from previous courses or semesters
 - assignment discovery from local assignment folders
 - demo student workspace creation
 - simple browser file list
 - simple browser editor with lightweight syntax highlighting for starter/source files
 - save file changes
+- run current workspace without creating a graded attempt
 - grade current workspace
 - display feedback
+- instructor overview with basic analytics such as missing assignments, average score, compile errors, and needs-review counts
+- instructor assignment builder prototype for authoring assignment metadata, starter files, required files, checks, and publish state
 
 ### Not yet
 
@@ -1503,6 +1668,47 @@ These should never be committed to Git.
 
 ## 11.1 Early SQLite tables
 
+### courses
+
+- id
+- code
+- title
+- created_at
+
+A course represents the reusable course shell, such as `CS 102: Object-Oriented C++`. It is not the same thing as a particular semester section.
+
+### terms
+
+- id
+- name
+- starts_on nullable
+- ends_on nullable
+- created_at
+
+A term represents the semester or offering period, such as `Spring 2026`.
+
+### course_sections
+
+- id
+- course_id
+- term_id
+- section_number
+- display_name
+- meeting_info nullable
+- created_at
+
+A section represents one roster/group for a course in a term, such as `CS 102-01`. Instructors may teach multiple sections of the same course in the same semester.
+
+### enrollments
+
+- id
+- course_section_id
+- owner_key_id or user_id
+- role
+- created_at
+
+Enrollments connect users to sections as students, instructors, or admins. Early local prototypes may fake this with static course cards and `owner_key` values. Real deployments should use authenticated users and later Canvas/LTI role information.
+
 ### assignments
 
 - id
@@ -1511,6 +1717,21 @@ These should never be committed to Git.
 - path
 - language
 - created_at
+
+An assignment is the reusable assignment definition or repo. It may be published to more than one section.
+
+### assignment_publications
+
+- id
+- assignment_id
+- course_section_id
+- status
+- due_at nullable
+- points
+- created_at
+- published_at nullable
+
+An assignment publication represents an assignment made available to a specific section. This allows the same assignment repo to be used in `CS 102-01` and `CS 102-02` with different due dates, publish states, or section-specific settings.
 
 ### users or owner_keys
 
@@ -1525,6 +1746,7 @@ For early local use, `owner_key` may be a simple string such as `demo-student`. 
 
 - id
 - assignment_id
+- assignment_publication_id nullable
 - owner_key_id or owner_key
 - workspace_path
 - created_at
@@ -1607,9 +1829,12 @@ Submissions are compatibility input records. A submission may refer to an upload
 
 - id
 - platform_id
+- course_section_id nullable
 - canvas_course_id
 - context_label
 - context_title
+
+An LTI context should eventually map to a HamrForge course section or all-sections course context. Canvas supplies the LMS course/context identity, but HamrForge should still maintain its own course/term/section model so direct home-server use and LTI use share the same product structure.
 
 ### lti_users
 
@@ -1790,12 +2015,18 @@ Do not implement grading yet.
 
 ### Ticket 12: Basic student workspace web UI
 
-- select assignment
+- fake login/front-door page for prototype review
+- show current course cards before assignments
+- support previous-course affordance
+- select course/semester/section context
+- show course/section assignment cards
 - create/open demo workspace
 - edit source files in a simple syntax-highlighted browser editor
 - save changes
+- run current workspace without grading
 - grade current workspace
 - display feedback
+- keep global navigation separate from course-specific navigation
 
 ### Ticket 13: Sandboxed runner
 
@@ -2214,13 +2445,18 @@ Requirements:
 Add the first student-facing workflow.
 
 Requirements:
-1. List available assignments.
-2. Create/open a demo student workspace.
-3. Show workspace files.
-4. Edit source files in a simple browser editor with lightweight syntax highlighting.
-5. Save changes.
-6. Grade the current workspace.
-7. Display feedback.
+1. Add a fake front-door page that can route to a student or instructor prototype.
+2. Show current courses as cards before showing assignments.
+3. Include an affordance for previous courses, even if it is static/fake at first.
+4. After a course is selected, show course/section assignment cards.
+5. Create/open a demo student workspace.
+6. Show workspace files.
+7. Edit source files in a simple browser editor with lightweight syntax highlighting.
+8. Save changes.
+9. Run the current workspace without creating a graded attempt.
+10. Grade the current workspace.
+11. Display feedback.
+12. Keep course-specific navigation separate from global navigation.
 
 Do not build a full IDE yet.
 Do not add autocomplete, debugging, terminal access, or project-wide search yet.

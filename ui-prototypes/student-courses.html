@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Student Courses</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Student Portal</span>
+    </div>
+    <div class="meta">demo-student · Current Courses</div>
+  </header>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">My Courses</div>
+      <div class="content">
+        <h1>Current Courses</h1>
+        <p class="muted">Choose a course to see assignments, workspaces, attempts, and feedback.</p>
+        <div class="grid dashboard-grid">
+          <article class="card course-card">
+            <span class="status warn">Active</span>
+            <div>
+              <h2>CS 102-01</h2>
+              <p class="muted">Object-Oriented C++ · Spring 2026</p>
+            </div>
+            <div class="metric-row">
+              <div class="metric"><span>Open</span><strong>2</strong></div>
+              <div class="metric"><span>Complete</span><strong>1</strong></div>
+              <div class="metric"><span>Best Avg</span><strong>86%</strong></div>
+            </div>
+            <div class="actions">
+              <a class="button primary" href="student-dashboard.html">Open Course</a>
+            </div>
+          </article>
+          <article class="card course-card">
+            <span class="status pass">On Track</span>
+            <div>
+              <h2>CS 150-02</h2>
+              <p class="muted">Intro to Web Programming · Spring 2026</p>
+            </div>
+            <div class="metric-row">
+              <div class="metric"><span>Open</span><strong>1</strong></div>
+              <div class="metric"><span>Complete</span><strong>4</strong></div>
+              <div class="metric"><span>Best Avg</span><strong>94%</strong></div>
+            </div>
+            <div class="actions">
+              <a class="button" href="student-dashboard.html">Open Course</a>
+            </div>
+          </article>
+        </div>
+        <hr>
+        <h2>Previous Courses</h2>
+        <div class="grid dashboard-grid">
+          <article class="card course-card compact-card">
+            <span class="status pass">Archived</span>
+            <h3>CS 101-03 · Fall 2025</h3>
+            <p class="muted">Programming Fundamentals · final best average 91%</p>
+            <div class="actions">
+              <a class="button" href="student-dashboard.html">Review</a>
+            </div>
+          </article>
+          <article class="card course-card compact-card">
+            <span class="status pass">Archived</span>
+            <h3>CS 099-01 · Summer 2025</h3>
+            <p class="muted">Computing Foundations · final best average 96%</p>
+            <div class="actions">
+              <a class="button" href="student-dashboard.html">Review</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

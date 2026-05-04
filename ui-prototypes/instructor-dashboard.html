@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Instructor Dashboard</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Instructor Console</span>
+    </div>
+    <div class="meta"><a href="instructor-courses.html">My Sections</a> · Stephen Hamrick</div>
+  </header>
+  <div class="app-toolbar">
+    <div class="toolbar-content">
+      <nav class="main-nav" aria-label="Instructor navigation">
+        <a class="active" href="instructor-dashboard.html">Overview</a>
+        <a href="assignment-results.html">Results</a>
+        <a href="assignment-builder.html">Assignment Builder</a>
+        <a href="#">Students</a>
+        <a href="#">Settings</a>
+      </nav>
+      <div class="context-picker">
+        <label>
+          Semester
+          <select>
+            <option>Spring 2026</option>
+            <option>Fall 2025</option>
+          </select>
+        </label>
+        <label>
+          Section
+          <select>
+            <option>CS 102-01</option>
+            <option>CS 102-02</option>
+            <option>All Sections</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">Course Overview</div>
+      <div class="content">
+        <div class="section-strip">
+          <div>
+            <h1>CS 102-01 · Spring 2026</h1>
+            <p class="muted">Object-Oriented C++ · Monday/Wednesday 10:00 AM · 31 students</p>
+          </div>
+          <nav class="section-tabs" aria-label="Section shortcuts">
+            <a class="active" href="#">Section 01</a>
+            <a href="#">Section 02</a>
+            <a href="#">All Sections</a>
+          </nav>
+        </div>
+        <p class="muted">Prototype view for assignment health, student progress, and grading flags for the selected section.</p>
+        <div class="grid analytics-grid">
+          <div class="metric big"><span>Missing Assignments</span><strong>18</strong></div>
+          <div class="metric big"><span>Course Average</span><strong>78.5%</strong></div>
+          <div class="metric big"><span>Compile Errors</span><strong>5</strong></div>
+          <div class="metric big"><span>Need Review</span><strong>9</strong></div>
+        </div>
+        <div class="grid wide-grid">
+          <section class="grid dashboard-grid">
+            <article class="card assignment-card">
+              <span class="status warn">Active</span>
+              <h2>Unit 02 - Byte Class Construction</h2>
+              <div class="metric-row">
+                <div class="metric"><span>Started</span><strong>28 / 31</strong></div>
+                <div class="metric"><span>Avg</span><strong>31.4</strong></div>
+                <div class="metric"><span>Missing</span><strong>7</strong></div>
+              </div>
+              <div class="actions">
+                <a class="button primary" href="assignment-results.html">View Results</a>
+                <a class="button" href="assignment-builder.html">Edit Assignment</a>
+              </div>
+            </article>
+            <article class="card assignment-card">
+              <span class="status warn">Draft</span>
+              <h2>Unit 03 - Byte Overloaded Constructors</h2>
+              <div class="metric-row">
+                <div class="metric"><span>Started</span><strong>0 / 31</strong></div>
+                <div class="metric"><span>Avg</span><strong>-</strong></div>
+                <div class="metric"><span>Missing</span><strong>31</strong></div>
+              </div>
+              <div class="actions">
+                <button class="primary">Publish</button>
+                <a class="button" href="assignment-builder.html">Edit Assignment</a>
+              </div>
+            </article>
+          </section>
+          <aside class="card">
+            <h2>Class Signals</h2>
+            <div class="bar-list">
+              <div class="bar-row">
+                <div class="bar-label"><span>Submitted Unit 02</span><strong>77%</strong></div>
+                <div class="bar-track"><div class="bar-fill" style="width: 77%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-label"><span>Passing Latest Attempt</span><strong>61%</strong></div>
+                <div class="bar-track"><div class="bar-fill" style="width: 61%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-label"><span>Workspace Started</span><strong>90%</strong></div>
+                <div class="bar-track"><div class="bar-fill" style="width: 90%"></div></div>
+              </div>
+            </div>
+            <hr>
+            <div class="insight-list">
+              <div class="insight"><strong>5 students</strong><br><span class="muted">have compile errors on their latest attempt.</span></div>
+              <div class="insight"><strong>7 students</strong><br><span class="muted">have not submitted Unit 02.</span></div>
+              <div class="insight"><strong>Unit 03</strong><br><span class="muted">is still a draft and ready for assignment checks.</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

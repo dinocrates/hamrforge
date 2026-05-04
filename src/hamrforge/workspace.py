@@ -5,12 +5,13 @@ import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from hamrforge.assignment import load_assignment, validate_assignment
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.models import CheckResult, GradeResult
-from hamrforge.runner import SandboxRunner
+from hamrforge.runner import CompileRequest, RunRequest, SandboxRunner
 
 
 class WorkspaceError(Exception):
@@ -48,6 +49,29 @@ class Attempt:
     snapshot_path: Path
     result: GradeResult
     runner: str = "assignment default"
+
+
+@dataclass(frozen=True)
+class ProgramRun:
+    runner: str
+    compile_returncode: int
+    compile_stdout: str
+    compile_stderr: str
+    run_returncode: int | None = None
+    program_stdout: str = ""
+    program_stderr: str = ""
+    compile_timed_out: bool = False
+    run_timed_out: bool = False
+    output_limited: bool = False
+    compiler_missing: bool = False
+
+    @property
+    def compiled(self) -> bool:
+        return self.compile_returncode == 0 and not self.compile_timed_out and not self.compiler_missing
+
+    @property
+    def succeeded(self) -> bool:
+        return self.compiled and self.run_returncode == 0 and not self.run_timed_out
 
 
 def create_workspace(assignment_dir: Path, owner_key: str, overwrite: bool = False) -> Workspace:
@@ -210,6 +234,68 @@ def grade_workspace(workspace: Workspace, runner: SandboxRunner | None = None, r
     )
 
 
+def run_workspace_program(
+    workspace: Workspace,
+    runner: SandboxRunner,
+    runner_name: str = "assignment default",
+    stdin: str = "",
+) -> ProgramRun:
+    assignment = load_assignment(workspace.assignment_path)
+    if str(assignment["language"]).strip().lower() not in {"cpp", "c++"}:
+        raise WorkspaceError(f"workspace run supports cpp assignments only in Rev 1: {assignment['language']}")
+
+    with TemporaryDirectory(prefix="hamrforge-run-") as tmp:
+        snapshot_dir = Path(tmp) / "snapshot"
+        _copy_snapshot(workspace.path, snapshot_dir)
+        cpp_files = _student_program_cpp_files(snapshot_dir)
+        if not cpp_files:
+            return ProgramRun(
+                runner=runner_name,
+                compile_returncode=1,
+                compile_stdout="",
+                compile_stderr="No .cpp files were found to compile.",
+            )
+
+        output_path = snapshot_dir / "hamrforge_program"
+        compile_result = runner.compile_cpp(
+            CompileRequest(
+                compiler=str(assignment["compiler"]),
+                standard=str(assignment["standard"]),
+                source_files=cpp_files,
+                output_path=output_path,
+            ),
+            workspace=snapshot_dir,
+        )
+        if not compile_result.succeeded:
+            return ProgramRun(
+                runner=runner_name,
+                compile_returncode=compile_result.returncode,
+                compile_stdout=compile_result.stdout,
+                compile_stderr=compile_result.stderr,
+                compile_timed_out=compile_result.timed_out,
+                output_limited=compile_result.output_limited,
+                compiler_missing=compile_result.compiler_missing,
+            )
+
+        run_result = runner.run_executable(
+            RunRequest(executable_path=output_path, stdin=stdin),
+            workspace=snapshot_dir,
+        )
+        return ProgramRun(
+            runner=runner_name,
+            compile_returncode=compile_result.returncode,
+            compile_stdout=compile_result.stdout,
+            compile_stderr=compile_result.stderr,
+            run_returncode=run_result.returncode,
+            program_stdout=run_result.stdout,
+            program_stderr=run_result.stderr,
+            compile_timed_out=compile_result.timed_out,
+            run_timed_out=run_result.timed_out,
+            output_limited=compile_result.output_limited or run_result.output_limited,
+            compiler_missing=compile_result.compiler_missing,
+        )
+
+
 def latest_attempt(workspace: Workspace) -> Attempt | None:
     attempts = list_attempts(workspace)
     return attempts[0] if attempts else None
@@ -249,6 +335,10 @@ def _copy_snapshot(workspace_root: Path, snapshot_dir: Path) -> None:
         return {".hamrforge"} & set(names)
 
     shutil.copytree(workspace_root, snapshot_dir, ignore=ignore)
+
+
+def _student_program_cpp_files(workspace_root: Path) -> list[Path]:
+    return sorted(path for path in workspace_root.rglob("*.cpp") if path.is_file() and not path.name.startswith("hamrforge_"))
 
 
 def _result_from_report(report_json_path: Path, report_md_path: Path) -> GradeResult:

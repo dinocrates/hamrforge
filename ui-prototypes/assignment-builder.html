@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Assignment Builder</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Assignment Builder</span>
+    </div>
+    <div class="meta"><a href="instructor-courses.html">My Sections</a> · Stephen Hamrick</div>
+  </header>
+  <div class="app-toolbar">
+    <div class="toolbar-content">
+      <nav class="main-nav" aria-label="Instructor navigation">
+        <a href="instructor-dashboard.html">Overview</a>
+        <a href="assignment-results.html">Results</a>
+        <a class="active" href="assignment-builder.html">Assignment Builder</a>
+        <a href="#">Students</a>
+        <a href="#">Settings</a>
+      </nav>
+      <div class="context-picker">
+        <label>
+          Semester
+          <select>
+            <option>Spring 2026</option>
+            <option>Fall 2025</option>
+          </select>
+        </label>
+        <label>
+          Section
+          <select>
+            <option>CS 102-01</option>
+            <option>CS 102-02</option>
+            <option>All Sections</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">Build Assignment</div>
+      <div class="content builder-layout">
+        <aside class="card">
+          <h2>Setup Steps</h2>
+          <nav class="builder-menu">
+            <a class="active" href="#">Overview</a>
+            <a href="#">Instructions</a>
+            <a href="#">Starter Files</a>
+            <a href="#">Required Files</a>
+            <a href="#">Checks</a>
+            <a href="#">Publish</a>
+          </nav>
+        </aside>
+        <section class="grid">
+          <article class="card">
+            <h1>Unit 03 - Byte Overloaded Constructors</h1>
+            <p class="muted">Fake assignment-authoring surface. The real version should produce assignment metadata, starter files, and grading checks without forcing instructors to hand-edit YAML.</p>
+            <div class="form-grid">
+              <label>
+                Assignment title
+                <input value="Unit 03 - Byte Overloaded Constructors">
+              </label>
+              <label>
+                Slug
+                <input value="byte-constructors">
+              </label>
+              <label>
+                Language
+                <select>
+                  <option>C++</option>
+                </select>
+              </label>
+              <label>
+                Points
+                <input value="40">
+              </label>
+              <label>
+                Due date
+                <input value="Sunday 11:59 pm">
+              </label>
+              <label>
+                Runner
+                <select>
+                  <option>podman</option>
+                  <option>local_unsafe</option>
+                </select>
+              </label>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Starter Files</h2>
+            <div class="file-tree">
+              <button class="tree-row folder open" type="button">
+                <span class="twisty">▾</span><span class="icon">▣</span><span>byte-constructors</span>
+              </button>
+              <button class="tree-row folder open indent-1" type="button">
+                <span class="twisty">▾</span><span class="icon">▣</span><span>include</span>
+              </button>
+              <button class="tree-row file indent-2 active" type="button">
+                <span class="twisty"></span><span class="icon">H</span><span>Byte.h</span>
+              </button>
+              <button class="tree-row folder open indent-1" type="button">
+                <span class="twisty">▾</span><span class="icon">▣</span><span>src</span>
+              </button>
+              <button class="tree-row file indent-2" type="button">
+                <span class="twisty"></span><span class="icon">C</span><span>Byte.cpp</span>
+              </button>
+              <button class="tree-row file indent-2" type="button">
+                <span class="twisty"></span><span class="icon">C</span><span>main.cpp</span>
+              </button>
+            </div>
+            <div class="actions">
+              <button>New Starter File</button>
+              <button>New Folder</button>
+              <button>Upload Files</button>
+            </div>
+          </article>
+          <article class="card">
+            <h2>Checks</h2>
+            <div class="check-builder">
+              <section class="check pass">
+                <strong>Required files</strong>
+                <span class="muted">main.cpp, Byte.h, Byte.cpp · 12 points</span>
+              </section>
+              <section class="check pass">
+                <strong>Compiles</strong>
+                <span class="muted">g++ C++17 compile check · 6 points</span>
+              </section>
+              <section class="check warn">
+                <strong>Constructor expression tests</strong>
+                <span class="muted">Default, int, and array constructor checks · 12 points</span>
+              </section>
+              <section class="check warn">
+                <strong>Arithmetic methods</strong>
+                <span class="muted">add, sub, mul, div behavior checks · 10 points</span>
+              </section>
+            </div>
+            <div class="actions">
+              <button class="primary">Add Check</button>
+              <button>Preview Assignment</button>
+              <button>Save Draft</button>
+            </div>
+          </article>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

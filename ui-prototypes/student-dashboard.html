@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Student Dashboard</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Student Lab</span>
+    </div>
+    <div class="meta"><a href="student-courses.html">My Courses</a> · demo-student · CS 102 · Spring</div>
+  </header>
+  <div class="app-toolbar">
+    <nav class="main-nav" aria-label="Student navigation">
+      <a class="active" href="student-dashboard.html">Assignments</a>
+      <a href="student-workspace.html">Workspace</a>
+      <a href="#">Grades</a>
+      <a href="#">Help</a>
+    </nav>
+  </div>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">Semester Assignments</div>
+      <div class="content">
+        <div class="section-strip">
+          <div>
+            <h1>CS 102-01 · Spring 2026</h1>
+            <p class="muted">Object-Oriented C++ · current assignments for this course section.</p>
+          </div>
+          <div class="actions">
+            <a class="button" href="student-courses.html">Back to Courses</a>
+          </div>
+        </div>
+        <p class="muted">Open an assignment, edit your workspace, run your program, then grade when you are ready.</p>
+        <div class="grid dashboard-grid">
+          <article class="card assignment-card">
+            <span class="status warn">In Progress</span>
+            <div>
+              <h2>Unit 02 - Byte Class Construction</h2>
+              <p class="muted">Due Sunday 11:59 pm · 40 points</p>
+            </div>
+            <div class="metric-row">
+              <div class="metric"><span>Latest</span><strong>32 / 40</strong></div>
+              <div class="metric"><span>Best</span><strong>36 / 40</strong></div>
+              <div class="metric"><span>Attempts</span><strong>4</strong></div>
+            </div>
+            <div class="actions">
+              <a class="button primary" href="student-workspace.html">Open Assignment</a>
+            </div>
+          </article>
+          <article class="card assignment-card">
+            <span class="status fail">Not Started</span>
+            <div>
+              <h2>Unit 03 - Byte Overloaded Constructors</h2>
+              <p class="muted">Due Sunday 11:59 pm · 40 points</p>
+            </div>
+            <div class="metric-row">
+              <div class="metric"><span>Latest</span><strong>-</strong></div>
+              <div class="metric"><span>Best</span><strong>-</strong></div>
+              <div class="metric"><span>Attempts</span><strong>0</strong></div>
+            </div>
+            <div class="actions">
+              <a class="button" href="student-workspace.html">Start Assignment</a>
+            </div>
+          </article>
+          <article class="card assignment-card">
+            <span class="status pass">Complete</span>
+            <div>
+              <h2>Unit 01 - Review Program</h2>
+              <p class="muted">Closed · 20 points</p>
+            </div>
+            <div class="metric-row">
+              <div class="metric"><span>Latest</span><strong>20 / 20</strong></div>
+              <div class="metric"><span>Best</span><strong>20 / 20</strong></div>
+              <div class="metric"><span>Attempts</span><strong>2</strong></div>
+            </div>
+            <div class="actions">
+              <a class="button" href="student-workspace.html">Review</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

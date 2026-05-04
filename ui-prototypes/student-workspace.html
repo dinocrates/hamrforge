@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Student Workspace</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Unit 02 - Byte Class Construction</span>
+    </div>
+    <div class="meta"><a href="student-dashboard.html">Dashboard</a> · demo-student</div>
+  </header>
+  <div class="app-toolbar">
+    <nav class="main-nav" aria-label="Student navigation">
+      <a href="student-dashboard.html">Assignments</a>
+      <a class="active" href="student-workspace.html">Workspace</a>
+      <a href="#">Grades</a>
+      <a href="#">Help</a>
+    </nav>
+  </div>
+  <main class="shell workspace">
+    <aside class="pane">
+      <div class="titlebar">Project Explorer</div>
+      <div class="pane-body">
+        <nav class="file-tree" aria-label="Project files">
+          <button class="tree-row folder open" type="button" data-folder="root" aria-expanded="true">
+            <span class="twisty">▾</span>
+            <span class="icon">▣</span>
+            <span>byte-class</span>
+          </button>
+          <div class="tree-children" data-parent="root">
+            <button class="tree-row folder open indent-1" type="button" data-folder="include" aria-expanded="true">
+              <span class="twisty">▾</span>
+              <span class="icon">▣</span>
+              <span>include</span>
+            </button>
+            <div class="tree-children" data-parent="include">
+              <button class="tree-row file indent-2 active" type="button" data-file="include/Byte.h">
+                <span class="twisty"></span>
+                <span class="icon">H</span>
+                <span>Byte.h</span>
+              </button>
+            </div>
+            <button class="tree-row folder open indent-1" type="button" data-folder="src" aria-expanded="true">
+              <span class="twisty">▾</span>
+              <span class="icon">▣</span>
+              <span>src</span>
+            </button>
+            <div class="tree-children" data-parent="src">
+              <button class="tree-row file indent-2" type="button" data-file="src/Byte.cpp">
+                <span class="twisty"></span>
+                <span class="icon">C</span>
+                <span>Byte.cpp</span>
+              </button>
+              <button class="tree-row file indent-2" type="button" data-file="src/main.cpp">
+                <span class="twisty"></span>
+                <span class="icon">C</span>
+                <span>main.cpp</span>
+              </button>
+            </div>
+            <button class="tree-row folder indent-1" type="button" data-folder="tests" aria-expanded="false">
+              <span class="twisty">▸</span>
+              <span class="icon">▣</span>
+              <span>tests</span>
+            </button>
+            <div class="tree-children collapsed" data-parent="tests">
+              <button class="tree-row file indent-2" type="button" data-file="tests/manual-checks.txt">
+                <span class="twisty"></span>
+                <span class="icon">T</span>
+                <span>manual-checks.txt</span>
+              </button>
+            </div>
+            <button class="tree-row file indent-1" type="button" data-file="README.md">
+              <span class="twisty"></span>
+              <span class="icon">M</span>
+              <span>README.md</span>
+            </button>
+          </div>
+        </nav>
+        <hr>
+        <div class="file-toolbar">
+          <button type="button">New File</button>
+          <button type="button">New Folder</button>
+          <button type="button">Rename</button>
+          <button type="button">Delete</button>
+        </div>
+        <hr>
+        <h3>Assignment</h3>
+        <p class="muted">Create a Byte class with encapsulated bit storage, conversion helpers, and a testable main program.</p>
+      </div>
+    </aside>
+    <section class="pane">
+      <div class="titlebar">Editor</div>
+      <div class="pane-body">
+        <div class="editor-header">
+          <strong id="editing-label">Editing include/Byte.h</strong>
+          <span class="status warn">Unsaved changes</span>
+        </div>
+        <textarea id="workspace-code" class="fake-editor" spellcheck="false">#pragma once
+
+#include &lt;string&gt;
+
+class Byte {
+private:
+    int bits[8];
+    int bitsToInt();
+
+public:
+    Byte();
+    void setValue(int value);
+    int at(int index);
+    int toInt();
+    std::string toString();
+};</textarea>
+        <div class="actions">
+          <button>Save</button>
+          <button>Run Program</button>
+          <button class="primary">Grade</button>
+        </div>
+      </div>
+    </section>
+    <aside class="pane">
+      <div class="titlebar">Feedback</div>
+      <div class="pane-body">
+        <div class="feedback-tabs">
+          <span class="tab active">Run</span>
+          <span class="tab">Grade</span>
+          <span class="tab">Attempts</span>
+        </div>
+        <h3>Run Output</h3>
+        <pre class="output">1
+1
+0
+0
+0
+1
+1
+0
+Int:    99
+String: 11000110</pre>
+        <hr>
+        <div class="metric-row">
+          <div class="metric"><span>Latest</span><strong>32 / 40</strong></div>
+          <div class="metric"><span>Best</span><strong>36 / 40</strong></div>
+          <div class="metric"><span>Status</span><strong>Needs Work</strong></div>
+        </div>
+        <hr>
+        <section class="check pass">
+          <strong>Required files</strong>
+          <span class="muted">All required files were found.</span>
+        </section>
+        <section class="check pass">
+          <strong>Compiles</strong>
+          <span class="muted">Your code compiled successfully.</span>
+        </section>
+        <section class="check fail">
+          <strong>toString returns reversed bit string</strong>
+          <span class="muted">Expected 01100011 but output did not match.</span>
+        </section>
+        <details>
+          <summary>Detailed Diagnostics</summary>
+          <pre class="output">Compiler stderr:
+[empty]
+
+Program exit:
+0
+
+Runner:
+podman / hamrforge-cpp-runner</pre>
+        </details>
+      </div>
+    </aside>
+  </main>
+  <script>
+    const fakeFiles = {
+      "include/Byte.h": `#pragma once
+
+#include <string>
+
+class Byte {
+private:
+    int bits[8];
+    int bitsToInt();
+
+public:
+    Byte();
+    void setValue(int value);
+    int at(int index);
+    int toInt();
+    std::string toString();
+};`,
+      "src/Byte.cpp": `#include "Byte.h"
+
+#include <string>
+
+Byte::Byte() {
+    setValue(0);
+}
+
+void Byte::setValue(int value) {
+    for (int i = 0; i < 8; ++i) {
+        bits[i] = (value >> i) & 1;
+    }
+}
+
+int Byte::at(int index) {
+    if (index < 0 || index >= 8) {
+        return 0;
+    }
+    return bits[index];
+}
+
+int Byte::toInt() {
+    return bitsToInt();
+}`,
+      "src/main.cpp": `#include "Byte.h"
+
+#include <iostream>
+
+int main() {
+    Byte bite;
+    bite.setValue(99);
+
+    for (int i = 0; i < 8; ++i) {
+        std::cout << bite.at(i) << "\\n";
+    }
+
+    std::cout << "Int:    " << bite.toInt() << "\\n";
+    std::cout << "String: " << bite.toString() << "\\n";
+    return 0;
+}`,
+      "tests/manual-checks.txt": `Try these values before grading:
+
+0
+1
+7
+99
+255`,
+      "README.md": `# Unit 02 - Byte Class Construction
+
+Build a Byte class using private bit storage.
+
+Required files:
+- include/Byte.h
+- src/Byte.cpp
+- src/main.cpp`
+    };
+
+    document.querySelectorAll(".tree-row.folder").forEach((folder) => {
+      folder.addEventListener("click", () => {
+        const key = folder.dataset.folder;
+        const childGroup = document.querySelector(`[data-parent="${key}"]`);
+        if (!childGroup) return;
+        const collapsed = childGroup.classList.toggle("collapsed");
+        folder.classList.toggle("open", !collapsed);
+        folder.setAttribute("aria-expanded", String(!collapsed));
+        const twisty = folder.querySelector(".twisty");
+        if (twisty) twisty.textContent = collapsed ? "▸" : "▾";
+      });
+    });
+
+    document.querySelectorAll(".tree-row.file").forEach((fileButton) => {
+      fileButton.addEventListener("click", () => {
+        const filePath = fileButton.dataset.file;
+        document.querySelectorAll(".tree-row.file").forEach((row) => row.classList.remove("active"));
+        fileButton.classList.add("active");
+        document.getElementById("editing-label").textContent = `Editing ${filePath}`;
+        document.getElementById("workspace-code").value = fakeFiles[filePath] || "";
+      });
+    });
+  </script>
+</body>
+</html>

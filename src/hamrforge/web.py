@@ -10,10 +10,12 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from hamrforge.assignment import load_assignment, validate_assignment
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.models import GradeResult
 from hamrforge.runner import create_runner
 from hamrforge.workspace import (
+    ProgramRun,
     Workspace,
     WorkspaceError,
     create_workspace,
@@ -26,6 +28,7 @@ from hamrforge.workspace import (
     load_workspace,
     read_workspace_file,
     rename_workspace_file,
+    run_workspace_program,
     write_workspace_file,
 )
 
@@ -33,6 +36,7 @@ app = FastAPI(title="HamrForge")
 
 STATIC_DIR = Path(__file__).parent / "static"
 DATA_DIR = Path("data")
+ASSIGNMENTS_DIR = Path("assignments")
 UPLOADS_DIR = DATA_DIR / "uploads"
 WEB_REPORTS_DIR = DATA_DIR / "reports"
 
@@ -40,8 +44,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> HTMLResponse:
-    return HTMLResponse(_render_page())
+def index(owner_key: str = "demo-student") -> HTMLResponse:
+    return HTMLResponse(_render_page(owner_key=owner_key))
 
 
 @app.post("/grade", response_class=HTMLResponse)
@@ -197,6 +201,35 @@ def workspace_grade(
         return HTMLResponse(_render_page(error=str(exc)), status_code=400)
 
 
+@app.post("/workspace/run", response_class=HTMLResponse)
+def workspace_run(
+    owner_key: str = Form(...),
+    assignment_slug: str = Form(...),
+    selected_file: str = Form(""),
+    file_path: str = Form(""),
+    content: str | None = Form(None),
+    runner: str = Form("local_unsafe"),
+) -> HTMLResponse:
+    try:
+        workspace = load_workspace(owner_key, assignment_slug)
+        if content is not None and file_path:
+            write_workspace_file(workspace, file_path, content)
+            selected_file = file_path
+        selected_runner = create_runner(runner)
+        run_result = run_workspace_program(workspace, runner=selected_runner, runner_name=runner)
+        return HTMLResponse(
+            _render_workspace_page(
+                workspace,
+                selected_file=selected_file,
+                notice="Workspace saved and program run.",
+                runner=runner,
+                run_result=run_result,
+            )
+        )
+    except (WorkspaceError, ValueError) as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=400)
+
+
 @app.get("/workspace/report/{owner_key}/{assignment_slug}/{attempt_id}/{filename}")
 def workspace_report(owner_key: str, assignment_slug: str, attempt_id: str, filename: str) -> HTMLResponse:
     if filename not in {"report.json", "report.md"}:
@@ -225,6 +258,7 @@ def download_report(request_id: str, filename: str) -> HTMLResponse:
 
 def _render_page(
     assignment: str = "assignments/byte-class",
+    owner_key: str = "demo-student",
     runner: str = "local_unsafe",
     result: GradeResult | None = None,
     uploaded_filename: str = "",
@@ -273,42 +307,8 @@ def _render_page(
     <div class="status-pill">Rev 1 · C++ adapter · local lab build</div>
   </header>
   <main>
-    <section class="band card">
-      <h2>Student workspace</h2>
-      <form class="inline-grid" action="/workspace/create" method="post">
-        <label>
-          Assignment folder
-          <input name="assignment" value="{_escape(assignment)}" required>
-        </label>
-        <label>
-          Owner key
-          <input name="owner_key" value="demo-student" required>
-        </label>
-        <button type="submit">Create / Open</button>
-      </form>
-    </section>
-    <section class="band card">
-      <h2>Legacy ZIP grading</h2>
-      <form class="inline-grid" action="/grade" method="post" enctype="multipart/form-data">
-        <label>
-          Assignment folder
-          <input name="assignment" value="{_escape(assignment)}" required>
-        </label>
-        <label>
-          Submission ZIP
-          <input name="submission" type="file" accept=".zip" required>
-        </label>
-        <label>
-          Runner
-          <select name="runner" required>
-            {_runner_option("local_unsafe", runner, "local_unsafe")}
-            {_runner_option("podman", runner, "podman")}
-          </select>
-        </label>
-        <button type="submit">Grade ZIP</button>
-      </form>
-      {_runner_notice(runner)}
-    </section>
+    {_render_assignment_launcher(owner_key)}
+    {_render_diagnostic_tools(assignment, runner)}
     {result_html}
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
@@ -329,20 +329,148 @@ def _render_page(
         editorForm.addEventListener("submit", () => workspaceEditor.save());
       }}
     }}
-    const gradeForm = document.getElementById("workspace-grade-form");
-    const gradeContent = document.getElementById("workspace-grade-content");
-    if (gradeForm && gradeContent && editorTextarea) {{
-      gradeForm.addEventListener("submit", () => {{
-        if (workspaceEditor) {{
-          gradeContent.value = workspaceEditor.getValue();
-        }} else {{
-          gradeContent.value = editorTextarea.value;
-        }}
+    const bufferForms = document.querySelectorAll(".workspace-buffer-form");
+    if (bufferForms.length && editorTextarea) {{
+      bufferForms.forEach((form) => {{
+        form.addEventListener("submit", () => {{
+          const bufferContent = form.querySelector(".workspace-buffer-content");
+          if (!bufferContent) {{
+            return;
+          }}
+          if (workspaceEditor) {{
+            bufferContent.value = workspaceEditor.getValue();
+          }} else {{
+            bufferContent.value = editorTextarea.value;
+          }}
+          const runnerSelect = document.getElementById("workspace-runner-select");
+          const runRunner = document.getElementById("workspace-run-runner");
+          if (runnerSelect && runRunner) {{
+            runRunner.value = runnerSelect.value;
+          }}
+        }});
       }});
     }}
   </script>
 </body>
 </html>"""
+
+
+def _render_diagnostic_tools(assignment: str, runner: str) -> str:
+    return f"""
+    <details class="card diagnostic-tools">
+      <summary>Diagnostic Tools</summary>
+      <section>
+        <h2>Legacy ZIP grading</h2>
+        <form class="inline-grid" action="/grade" method="post" enctype="multipart/form-data">
+          <label>
+            Assignment folder
+            <input name="assignment" value="{_escape(assignment)}" required>
+          </label>
+          <label>
+            Submission ZIP
+            <input name="submission" type="file" accept=".zip" required>
+          </label>
+          <label>
+            Runner
+            <select name="runner" required>
+              {_runner_option("local_unsafe", runner, "local_unsafe")}
+              {_runner_option("podman", runner, "podman")}
+            </select>
+          </label>
+          <button type="submit">Grade ZIP</button>
+        </form>
+        {_runner_notice(runner)}
+      </section>
+    </details>
+    """
+
+
+def _render_assignment_launcher(owner_key: str) -> str:
+    assignments = _discover_assignments()
+    cards = "\n".join(_render_assignment_card(owner_key, assignment) for assignment in assignments)
+    if not cards:
+        cards = '<p class="muted">No valid assignments were found under the assignments folder.</p>'
+    return f"""
+    <section class="band card">
+      <h2>Semester Assignments</h2>
+      <form class="owner-form" action="/" method="get">
+        <label>
+          Owner key
+          <input name="owner_key" value="{_escape(owner_key)}" required>
+        </label>
+        <button type="submit">Load Semester</button>
+      </form>
+      <div class="assignment-grid">
+        {cards}
+      </div>
+    </section>
+    """
+
+
+def _discover_assignments() -> list[dict[str, object]]:
+    if not ASSIGNMENTS_DIR.exists():
+        return []
+    discovered: list[dict[str, object]] = []
+    for assignment_dir in sorted(path for path in ASSIGNMENTS_DIR.iterdir() if path.is_dir()):
+        validation = validate_assignment(assignment_dir)
+        if not validation.is_valid:
+            continue
+        assignment = load_assignment(assignment_dir)
+        discovered.append(
+            {
+                "path": assignment_dir,
+                "title": str(assignment["title"]),
+                "slug": str(assignment["slug"]),
+                "language": str(assignment["language"]),
+                "max_score": float(assignment["max_score"]),
+                "runner": str(assignment.get("runner", "local_unsafe")),
+            }
+        )
+    return discovered
+
+
+def _render_assignment_card(owner_key: str, assignment: dict[str, object]) -> str:
+    assignment_path = Path(assignment["path"])
+    slug = str(assignment["slug"])
+    workspace = _try_load_workspace(owner_key, slug)
+    attempts = list_attempts(workspace) if workspace else []
+    latest = attempts[0] if attempts else None
+    best = max(attempts, key=lambda attempt: _attempt_percent(attempt)) if attempts else None
+    workspace_status = "Workspace ready" if workspace else "Not started"
+    action_text = "Open Workspace" if workspace else "Create Workspace"
+    latest_text = f"{latest.result.score:g} / {latest.result.max_score:g}" if latest else "No attempts"
+    best_text = f"{best.result.score:g} / {best.result.max_score:g}" if best else "No attempts"
+    return f"""
+    <article class="assignment-card">
+      <div>
+        <span class="status-label {'pass' if workspace else 'fail'}">{_escape(workspace_status)}</span>
+        <h3>{_escape(assignment["title"])}</h3>
+        <p class="muted">Slug: {_escape(slug)} · Language: {_escape(assignment["language"])}</p>
+      </div>
+      <div class="assignment-metrics">
+        <div class="metric">
+          <span>Latest</span>
+          <strong>{_escape(latest_text)}</strong>
+        </div>
+        <div class="metric">
+          <span>Best</span>
+          <strong>{_escape(best_text)}</strong>
+        </div>
+      </div>
+      <form action="/workspace/create" method="post">
+        <input type="hidden" name="assignment" value="{_escape(assignment_path.as_posix())}">
+        <input type="hidden" name="owner_key" value="{_escape(owner_key)}">
+        <button type="submit">{_escape(action_text)}</button>
+      </form>
+    </article>
+    """
+
+
+def _try_load_workspace(owner_key: str, assignment_slug: str) -> Workspace | None:
+    try:
+        return load_workspace(owner_key, assignment_slug)
+    except WorkspaceError:
+        return None
 
 
 def _render_result(
@@ -468,6 +596,35 @@ def _render_output_panel(title: str, body: str, open_panel: bool, css_class: str
     """
 
 
+def _render_latest_result_panel(workspace: Workspace, attempt: Attempt | None) -> str:
+    if attempt is None:
+        return """
+        <aside class="latest-panel">
+          <h2>Latest Result</h2>
+          <p class="muted">No grade attempts yet.</p>
+        </aside>
+        """
+    percent = _attempt_percent(attempt)
+    status_text = "Passed" if all(check.passed for check in attempt.result.checks) else "Review"
+    status_class = "pass" if status_text == "Passed" else "fail"
+    report_md_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.md"
+    report_json_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.json"
+    flags = ", ".join(attempt.result.flags) if attempt.result.flags else "None"
+    return f"""
+    <aside class="latest-panel">
+      <h2>Latest Result</h2>
+      <span class="status-label {status_class}">{status_text}</span>
+      <div class="score compact-score">{attempt.result.score:g} / {attempt.result.max_score:g}</div>
+      <p class="muted">{percent:.1f}% · Runner: {_escape(attempt.runner)}</p>
+      <p class="muted">Flags: {_escape(flags)}</p>
+      <div class="links">
+        <a href="{_escape(report_md_url)}">report.md</a>
+        <a href="{_escape(report_json_url)}">report.json</a>
+      </div>
+    </aside>
+    """
+
+
 def _extract_labeled_block(text: str, start_label: str, end_label: str | None) -> str:
     if start_label not in text:
         return ""
@@ -515,6 +672,7 @@ def _render_workspace_page(
     selected_file: str = "",
     notice: str = "",
     runner: str = "local_unsafe",
+    run_result: ProgramRun | None = None,
 ) -> str:
     files = list_workspace_files(workspace)
     editable_files = [file for file in files if file.editable]
@@ -540,7 +698,9 @@ def _render_workspace_page(
             report_md_url,
             runner=attempt.runner,
         )
+    latest_panel_html = _render_latest_result_panel(workspace, attempt)
     history_html = _render_attempt_history(workspace)
+    run_output_html = _render_run_output(run_result)
 
     file_links = "\n".join(
         f'<a class="{"active" if file.path == selected_file else ""}" href="{_workspace_url(workspace, file.path)}">{_escape(file.path)}</a>'
@@ -579,51 +739,99 @@ def _render_workspace_page(
                   {file_links}
                   {file_tools_html}
                 </nav>
-                <div>
-                  {editor_html}
-                  <form id="workspace-grade-form" action="/workspace/grade" method="post">
-                    <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
-                    <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
-                    <input type="hidden" name="selected_file" value="{_escape(selected_file)}">
-                    <input type="hidden" name="file_path" value="{_escape(selected_file)}">
-                    <textarea id="workspace-grade-content" name="content" hidden></textarea>
-                    <label class="runner-control">
-                      Runner
-                      <select name="runner" required>
-                        {_runner_option("local_unsafe", runner, "local_unsafe")}
-                        {_runner_option("podman", runner, "podman")}
-                      </select>
-                    </label>
-                    {_runner_notice(runner)}
-                    <div class="actions">
-                      <button type="submit">Save and Grade Workspace</button>
-                    </div>
-                  </form>
+                <div class="workspace-main">
+                  <div class="editor-panel">
+                    {editor_html}
+                    <form id="workspace-run-form" class="workspace-buffer-form" action="/workspace/run" method="post">
+                      <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
+                      <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
+                      <input type="hidden" name="selected_file" value="{_escape(selected_file)}">
+                      <input type="hidden" name="file_path" value="{_escape(selected_file)}">
+                      <textarea class="workspace-buffer-content" name="content" hidden></textarea>
+                      <input id="workspace-run-runner" type="hidden" name="runner" value="{_escape(runner)}">
+                      <div class="actions">
+                        <button type="submit">Save and Run Program</button>
+                      </div>
+                    </form>
+                    <form id="workspace-grade-form" class="workspace-buffer-form" action="/workspace/grade" method="post">
+                      <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
+                      <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
+                      <input type="hidden" name="selected_file" value="{_escape(selected_file)}">
+                      <input type="hidden" name="file_path" value="{_escape(selected_file)}">
+                      <textarea id="workspace-grade-content" class="workspace-buffer-content" name="content" hidden></textarea>
+                      <label class="runner-control">
+                        Runner
+                        <select id="workspace-runner-select" name="runner" required>
+                          {_runner_option("local_unsafe", runner, "local_unsafe")}
+                          {_runner_option("podman", runner, "podman")}
+                        </select>
+                      </label>
+                      {_runner_notice(runner)}
+                      <div class="actions">
+                        <button type="submit">Save and Grade Workspace</button>
+                      </div>
+                    </form>
+                    {run_output_html}
+                  </div>
+                  {latest_panel_html}
                 </div>
               </div>
             </section>
             {history_html}
-            {result_html}
+            <details class="card diagnostic-tools">
+              <summary>Latest Detailed Diagnostics</summary>
+              {result_html if result_html else '<p class="muted">No detailed result yet.</p>'}
+            </details>
             """
     )
+
+
+def _render_run_output(run_result: ProgramRun | None) -> str:
+    if run_result is None:
+        return """
+        <article class="card run-output-card">
+          <h2>Run Output</h2>
+          <p class="muted">Click Save and Run Program to compile and run the current workspace without creating a graded attempt.</p>
+        </article>
+        """
+
+    status_text = "Program finished" if run_result.succeeded else "Run needs attention"
+    status_class = "pass" if run_result.succeeded else "fail"
+    run_returncode = "not run" if run_result.run_returncode is None else str(run_result.run_returncode)
+    limited = " · output truncated" if run_result.output_limited else ""
+    timeout = " · timed out" if run_result.compile_timed_out or run_result.run_timed_out else ""
+    compiler_missing = " · compiler missing" if run_result.compiler_missing else ""
+    return f"""
+    <article class="card run-output-card">
+      <h2>Run Output</h2>
+      <div class="run-summary">
+        <span class="status-label {status_class}">{_escape(status_text)}</span>
+        <p class="muted">Runner: {_escape(run_result.runner)} · Compile exit: {run_result.compile_returncode} · Program exit: {_escape(run_returncode)}{limited}{timeout}{compiler_missing}</p>
+      </div>
+      {_render_output_panel("Compiler stdout", run_result.compile_stdout or _empty_panel_text("No compiler stdout."), False, "output-block")}
+      {_render_output_panel("Compiler stderr", run_result.compile_stderr or _empty_panel_text("No compiler stderr."), bool(run_result.compile_stderr), "output-block output-error")}
+      {_render_output_panel("Program stdout", run_result.program_stdout or _empty_panel_text("No program stdout."), bool(run_result.program_stdout), "output-block")}
+      {_render_output_panel("Program stderr", run_result.program_stderr or _empty_panel_text("No program stderr."), bool(run_result.program_stderr), "output-block output-error")}
+    </article>
+    """
 
 
 def _render_attempt_history(workspace: Workspace) -> str:
     attempts = list_attempts(workspace)
     if not attempts:
         return """
-        <section class="card attempt-history">
-          <h2>Attempt History</h2>
+        <details class="card attempt-history">
+          <summary>Attempt History</summary>
           <p class="muted">No attempts yet. Save and grade the workspace to create the first snapshot.</p>
-        </section>
+        </details>
         """
 
     best_attempt = max(attempts, key=lambda attempt: _attempt_percent(attempt))
     latest_attempt = attempts[0]
     rows = "\n".join(_render_attempt_row(workspace, attempt, is_latest=attempt is latest_attempt) for attempt in attempts)
     return f"""
-    <section class="card attempt-history">
-      <h2>Attempt History</h2>
+    <details class="card attempt-history">
+      <summary>Attempt History</summary>
       <div class="history-summary">
         <div class="metric">
           <span>Latest</span>
@@ -641,7 +849,7 @@ def _render_attempt_history(workspace: Workspace) -> str:
       <div class="attempt-list">
         {rows}
       </div>
-    </section>
+    </details>
     """
 
 

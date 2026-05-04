@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Assignment Results</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <strong>HamrForge</strong>
+      <span>Unit 02 Results</span>
+    </div>
+    <div class="meta"><a href="instructor-courses.html">My Sections</a> · <a href="instructor-dashboard.html">Instructor Dashboard</a></div>
+  </header>
+  <div class="app-toolbar">
+    <div class="toolbar-content">
+      <nav class="main-nav" aria-label="Instructor navigation">
+        <a href="instructor-dashboard.html">Overview</a>
+        <a class="active" href="assignment-results.html">Results</a>
+        <a href="assignment-builder.html">Assignment Builder</a>
+        <a href="#">Students</a>
+        <a href="#">Settings</a>
+      </nav>
+      <div class="context-picker">
+        <label>
+          Semester
+          <select>
+            <option>Spring 2026</option>
+            <option>Fall 2025</option>
+          </select>
+        </label>
+        <label>
+          Section
+          <select>
+            <option>CS 102-01</option>
+            <option>CS 102-02</option>
+            <option>All Sections</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </div>
+  <main class="shell">
+    <section class="window">
+      <div class="titlebar">Assignment Results</div>
+      <div class="content">
+        <div class="section-strip">
+          <div>
+            <h1>Unit 02 - Byte Class Construction</h1>
+            <p class="muted">CS 102-01 · Spring 2026 · 31 students</p>
+          </div>
+          <nav class="section-tabs" aria-label="Section shortcuts">
+            <a class="active" href="#">Section 01</a>
+            <a href="#">Section 02</a>
+            <a href="#">All Sections</a>
+          </nav>
+        </div>
+        <div class="metric-row">
+          <div class="metric"><span>Submitted</span><strong>24 / 31</strong></div>
+          <div class="metric"><span>Average</span><strong>31.4 / 40</strong></div>
+          <div class="metric"><span>Compile Flags</span><strong>5</strong></div>
+        </div>
+        <br>
+        <table>
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Status</th>
+              <th>Latest</th>
+              <th>Best</th>
+              <th>Attempts</th>
+              <th>Last Activity</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>demo-student</td>
+              <td><span class="status warn">Needs Work</span></td>
+              <td>32 / 40</td>
+              <td>36 / 40</td>
+              <td>4</td>
+              <td>Today 2:14 PM</td>
+              <td><a href="student-workspace.html">View Workspace</a></td>
+            </tr>
+            <tr>
+              <td>a.lee</td>
+              <td><span class="status pass">Complete</span></td>
+              <td>40 / 40</td>
+              <td>40 / 40</td>
+              <td>2</td>
+              <td>Yesterday 8:03 PM</td>
+              <td><a href="student-workspace.html">View Workspace</a></td>
+            </tr>
+            <tr>
+              <td>m.rivera</td>
+              <td><span class="status fail">Compile Error</span></td>
+              <td>12 / 40</td>
+              <td>12 / 40</td>
+              <td>3</td>
+              <td>Today 9:41 AM</td>
+              <td><a href="student-workspace.html">View Workspace</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
