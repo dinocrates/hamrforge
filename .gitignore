@@ -6,6 +6,10 @@ __pycache__/
 build/
 dist/
 data/
+!data/
+data/*
+!data/catalog/
+!data/catalog/catalog.yml
 reports/
 *.zip:Zone.Identifier
 web-ui*.log

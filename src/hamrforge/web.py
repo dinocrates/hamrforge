@@ -7,10 +7,11 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from hamrforge.assignment import load_assignment, validate_assignment
+from hamrforge.catalog import CatalogError, CourseSection, AssignmentPublication, load_catalog, publications_for_section, sections_for_user
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.models import GradeResult
 from hamrforge.runner import create_runner
@@ -46,6 +47,37 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", response_class=HTMLResponse)
 def index(owner_key: str = "demo-student") -> HTMLResponse:
     return HTMLResponse(_render_page(owner_key=owner_key))
+
+
+@app.get("/courses", response_class=HTMLResponse)
+def course_portal(owner_key: str = "demo-student", role: str = "student") -> HTMLResponse:
+    try:
+        catalog = load_catalog()
+    except CatalogError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=500)
+    sections = sections_for_user(catalog, owner_key=owner_key, role=role)
+    return HTMLResponse(_render_app_page(_render_course_portal(owner_key, role, sections), owner_key=owner_key, role=role))
+
+
+@app.get("/courses/{section_id}", response_class=HTMLResponse)
+def course_section_view(section_id: str, owner_key: str = "demo-student", role: str = "student") -> HTMLResponse:
+    try:
+        catalog = load_catalog()
+    except CatalogError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=500)
+    sections = sections_for_user(catalog, owner_key=owner_key, role=role)
+    selected = next((section for section in sections if section.section.id == section_id), None)
+    if selected is None:
+        return HTMLResponse(_render_app_page(_not_found_panel("Course section was not found for this user.")), status_code=404)
+    publications = publications_for_section(catalog, section_id)
+    return HTMLResponse(
+        _render_app_page(
+            _render_course_section(owner_key, role, selected, publications),
+            owner_key=owner_key,
+            role=role,
+            section=selected,
+        )
+    )
 
 
 @app.post("/grade", response_class=HTMLResponse)
@@ -230,6 +262,35 @@ def workspace_run(
         return HTMLResponse(_render_page(error=str(exc)), status_code=400)
 
 
+@app.post("/api/workspace/run")
+def api_workspace_run(
+    owner_key: str = Form(...),
+    assignment_slug: str = Form(...),
+    selected_file: str = Form(""),
+    file_path: str = Form(""),
+    content: str | None = Form(None),
+    runner: str = Form("local_unsafe"),
+) -> JSONResponse:
+    try:
+        workspace = load_workspace(owner_key, assignment_slug)
+        if content is not None and file_path:
+            write_workspace_file(workspace, file_path, content)
+            selected_file = file_path
+        selected_runner = create_runner(runner)
+        run_result = run_workspace_program(workspace, runner=selected_runner, runner_name=runner)
+        return JSONResponse(
+            {
+                "ok": True,
+                "notice": "Workspace saved and program run.",
+                "selected_file": selected_file,
+                "run": _program_run_payload(run_result),
+                "run_output_html": _render_run_output(run_result),
+            }
+        )
+    except (WorkspaceError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
 @app.get("/workspace/report/{owner_key}/{assignment_slug}/{attempt_id}/{filename}")
 def workspace_report(owner_key: str, assignment_slug: str, attempt_id: str, filename: str) -> HTMLResponse:
     if filename not in {"report.json", "report.md"}:
@@ -254,6 +315,214 @@ def download_report(request_id: str, filename: str) -> HTMLResponse:
         return HTMLResponse("Not found", status_code=404)
     media_type = "application/json" if filename.endswith(".json") else "text/markdown"
     return HTMLResponse(report_path.read_text(encoding="utf-8"), media_type=media_type)
+
+
+def _render_app_page(
+    content: str,
+    owner_key: str = "demo-student",
+    role: str = "student",
+    section: CourseSection | None = None,
+) -> str:
+    section_text = f"{section.section.display_name} · {section.term.name}" if section else "Course Portal"
+    nav = ""
+    if section:
+        base_query = urlencode({"owner_key": owner_key, "role": role})
+        nav = f"""
+        <div class="app-toolbar">
+          <nav class="main-nav" aria-label="Course navigation">
+            <a class="active" href="/courses/{_escape_url(section.section.id)}?{base_query}">Assignments</a>
+            <a href="/courses/{_escape_url(section.section.id)}?{base_query}">Workspace</a>
+            <a href="/courses/{_escape_url(section.section.id)}?{base_query}">Results</a>
+            <a href="/courses?{base_query}">All Courses</a>
+          </nav>
+        </div>
+        """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HamrForge Courses</title>
+  <link rel="stylesheet" href="/static/diagnostic.css">
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">{_escape(role)} portal</p>
+      <h1>HamrForge</h1>
+      <p class="subtitle">{_escape(section_text)}</p>
+    </div>
+    <div class="status-pill">{_escape(owner_key)}</div>
+  </header>
+  {nav}
+  <main>
+    {content}
+  </main>
+</body>
+</html>"""
+
+
+def _render_course_portal(owner_key: str, role: str, sections: list[CourseSection]) -> str:
+    current_cards = "\n".join(_render_course_card(owner_key, role, section) for section in sections)
+    if not current_cards:
+        current_cards = '<p class="muted">No current courses were found for this demo identity.</p>'
+    alternate_role = "instructor" if role == "student" else "student"
+    alternate_owner = "stephen" if alternate_role == "instructor" else "demo-student"
+    return f"""
+    <section class="band card">
+      <div class="section-strip">
+        <div>
+          <h2>{'My Sections' if role == 'instructor' else 'My Courses'}</h2>
+          <p class="muted">Current course cards come from <code>data/catalog/catalog.yml</code>. This is still file-backed and demo-only.</p>
+        </div>
+        <form class="owner-form" action="/courses" method="get">
+          <label>
+            Owner key
+            <input name="owner_key" value="{_escape(owner_key)}" required>
+          </label>
+          <label>
+            Role
+            <select name="role">
+              {_runner_option("student", role, "student")}
+              {_runner_option("instructor", role, "instructor")}
+            </select>
+          </label>
+          <button type="submit">Load Portal</button>
+        </form>
+      </div>
+      <div class="assignment-grid">
+        {current_cards}
+      </div>
+    </section>
+    <section class="band card">
+      <h2>Prototype shortcuts</h2>
+      <div class="links">
+        <a class="button-link" href="/courses?owner_key={_escape_url(alternate_owner)}&role={_escape_url(alternate_role)}">Preview {_escape(alternate_role)}</a>
+        <a class="button-link" href="/">Diagnostic Console</a>
+      </div>
+    </section>
+    """
+
+
+def _render_course_card(owner_key: str, role: str, section: CourseSection) -> str:
+    query = urlencode({"owner_key": owner_key, "role": role})
+    return f"""
+    <article class="assignment-card">
+      <div>
+        <span class="status-label pass">{_escape(section.term.name)}</span>
+        <h3>{_escape(section.section.display_name)}</h3>
+        <p class="muted">{_escape(section.course.code)} · {_escape(section.course.title)}</p>
+        <p class="muted">{_escape(section.section.meeting_info)}</p>
+      </div>
+      <div class="assignment-metrics">
+        <div class="metric">
+          <span>Role</span>
+          <strong>{_escape(section.enrollment.role)}</strong>
+        </div>
+        <div class="metric">
+          <span>Section</span>
+          <strong>{_escape(section.section.section_number)}</strong>
+        </div>
+      </div>
+      <a class="button-link" href="/courses/{_escape_url(section.section.id)}?{query}">Open Course</a>
+    </article>
+    """
+
+
+def _render_course_section(
+    owner_key: str,
+    role: str,
+    section: CourseSection,
+    publications: list[AssignmentPublication],
+) -> str:
+    cards = "\n".join(_render_publication_card(owner_key, publication) for publication in publications)
+    if not cards:
+        cards = '<p class="muted">No assignments have been published for this section yet.</p>'
+    analytics = _render_instructor_analytics(publications) if role == "instructor" else ""
+    return f"""
+    <section class="band card">
+      <div class="section-strip">
+        <div>
+          <h2>{_escape(section.section.display_name)} · {_escape(section.term.name)}</h2>
+          <p class="muted">{_escape(section.course.title)} · {_escape(section.section.meeting_info)}</p>
+        </div>
+        <div class="links">
+          <a class="button-link" href="/courses?owner_key={_escape_url(owner_key)}&role={_escape_url(role)}">Back to Courses</a>
+        </div>
+      </div>
+      {analytics}
+      <h2>Assignments</h2>
+      <div class="assignment-grid">
+        {cards}
+      </div>
+    </section>
+    """
+
+
+def _render_publication_card(owner_key: str, publication: AssignmentPublication) -> str:
+    workspace = _try_load_workspace(owner_key, publication.slug)
+    attempts = list_attempts(workspace) if workspace else []
+    latest = attempts[0] if attempts else None
+    best = max(attempts, key=lambda attempt: _attempt_percent(attempt)) if attempts else None
+    workspace_status = "Workspace ready" if workspace else "Not started"
+    action_text = "Open Workspace" if workspace else "Create Workspace"
+    latest_text = f"{latest.result.score:g} / {latest.result.max_score:g}" if latest else "No attempts"
+    best_text = f"{best.result.score:g} / {best.result.max_score:g}" if best else "No attempts"
+    return f"""
+    <article class="assignment-card">
+      <div>
+        <span class="status-label {'pass' if publication.status == 'published' else 'fail'}">{_escape(publication.status)}</span>
+        <h3>{_escape(publication.title)}</h3>
+        <p class="muted">Due: {_escape(publication.due)} · Points: {publication.points:g} · Language: {_escape(publication.language)}</p>
+      </div>
+      <div class="assignment-metrics">
+        <div class="metric">
+          <span>Latest</span>
+          <strong>{_escape(latest_text)}</strong>
+        </div>
+        <div class="metric">
+          <span>Best</span>
+          <strong>{_escape(best_text)}</strong>
+        </div>
+      </div>
+      <form action="/workspace/create" method="post">
+        <input type="hidden" name="assignment" value="{_escape(publication.assignment_path.as_posix())}">
+        <input type="hidden" name="owner_key" value="{_escape(owner_key)}">
+        <button type="submit">{_escape(action_text)}</button>
+      </form>
+      <p class="muted">{_escape(workspace_status)}</p>
+    </article>
+    """
+
+
+def _render_instructor_analytics(publications: list[AssignmentPublication]) -> str:
+    published = sum(1 for publication in publications if publication.status == "published")
+    drafts = sum(1 for publication in publications if publication.status != "published")
+    return f"""
+    <div class="history-summary">
+      <div class="metric">
+        <span>Published</span>
+        <strong>{published}</strong>
+      </div>
+      <div class="metric">
+        <span>Drafts</span>
+        <strong>{drafts}</strong>
+      </div>
+      <div class="metric">
+        <span>Catalog Source</span>
+        <strong>YAML</strong>
+      </div>
+    </div>
+    """
+
+
+def _not_found_panel(message: str) -> str:
+    return f"""
+    <section class="notice error" role="alert">
+      <strong>Not found.</strong>
+      <p>{_escape(message)}</p>
+    </section>
+    """
 
 
 def _render_page(
@@ -313,6 +582,7 @@ def _render_page(
   </main>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="/static/workspace.js"></script>
   <script>
     const editorTextarea = document.getElementById("workspace-editor");
     let workspaceEditor = null;
@@ -327,6 +597,10 @@ def _render_page(
       const editorForm = editorTextarea.closest("form");
       if (editorForm) {{
         editorForm.addEventListener("submit", () => workspaceEditor.save());
+      }}
+      const saveForm = document.getElementById("workspace-save-form");
+      if (saveForm) {{
+        saveForm.addEventListener("submit", () => workspaceEditor.save());
       }}
     }}
     const bufferForms = document.querySelectorAll(".workspace-buffer-form");
@@ -348,6 +622,11 @@ def _render_page(
             runRunner.value = runnerSelect.value;
           }}
         }});
+      }});
+    }}
+    if (window.HamrForgeWorkspace) {{
+      window.HamrForgeWorkspace.init({{
+        getEditorValue: () => workspaceEditor ? workspaceEditor.getValue() : (editorTextarea ? editorTextarea.value : "")
       }});
     }}
   </script>
@@ -702,81 +981,81 @@ def _render_workspace_page(
     history_html = _render_attempt_history(workspace)
     run_output_html = _render_run_output(run_result)
 
-    file_links = "\n".join(
-        f'<a class="{"active" if file.path == selected_file else ""}" href="{_workspace_url(workspace, file.path)}">{_escape(file.path)}</a>'
-        for file in files
-    )
+    file_tree_html = _render_file_tree(workspace, files, selected_file)
     file_tools_html = _render_file_tools(workspace, selected_file)
     notice_html = f'<section class="notice" role="status">{_escape(notice)}</section>' if notice else ""
     read_error_html = f'<section class="notice error">{_escape(read_error)}</section>' if read_error else ""
     instructions_html = _render_assignment_instructions(workspace.assignment_path)
+    workspace_title_html = _render_workspace_title(workspace, notice_html, read_error_html)
     editor_html = ""
     if selected_file and not read_error:
         editor_html = f"""
-        <form class="stack" action="/workspace/save" method="post">
-          <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
-          <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
-          <input type="hidden" name="file_path" value="{_escape(selected_file)}">
-          <label>
-            Editing {_escape(selected_file)}
-            <textarea id="workspace-editor" class="code-editor" name="content" spellcheck="false">{_escape(content)}</textarea>
-          </label>
-          <div class="actions">
-            <button type="submit">Save File</button>
-          </div>
-        </form>
+        <label class="editor-label">
+          Editing {_escape(selected_file)}
+          <textarea id="workspace-editor" class="code-editor" name="content" form="workspace-save-form" spellcheck="false">{_escape(content)}</textarea>
+        </label>
         """
     return _render_page(
         extra_html=f"""
-            <section class="band">
-              <h2>Workspace: {_escape(workspace.owner_key)} / {_escape(workspace.assignment_slug)}</h2>
-              <p class="muted">Path: {_escape(workspace.path)}</p>
-              {notice_html}
-              {read_error_html}
-              {instructions_html}
+            <section class="workspace-shell">
+              {workspace_title_html}
               <div class="workspace-layout">
-                <nav class="file-list" aria-label="Workspace files">
-                  {file_links}
+                <aside class="workspace-pane file-list" aria-label="Workspace files">
+                  <h3>Project Explorer</h3>
+                  {file_tree_html}
                   {file_tools_html}
-                </nav>
-                <div class="workspace-main">
-                  <div class="editor-panel">
-                    {editor_html}
-                    <form id="workspace-run-form" class="workspace-buffer-form" action="/workspace/run" method="post">
+                </aside>
+                <section class="workspace-pane editor-panel">
+                  <div class="pane-title">Editor</div>
+                  <div class="workspace-command-bar" role="toolbar" aria-label="Workspace commands">
+                    <form id="workspace-save-form" class="command-form" action="/workspace/save" method="post">
+                      <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
+                      <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
+                      <input type="hidden" name="file_path" value="{_escape(selected_file)}">
+                      <button type="submit">Save</button>
+                    </form>
+                    <form id="workspace-run-form" class="workspace-buffer-form command-form" action="/workspace/run" method="post">
                       <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
                       <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
                       <input type="hidden" name="selected_file" value="{_escape(selected_file)}">
                       <input type="hidden" name="file_path" value="{_escape(selected_file)}">
                       <textarea class="workspace-buffer-content" name="content" hidden></textarea>
                       <input id="workspace-run-runner" type="hidden" name="runner" value="{_escape(runner)}">
-                      <div class="actions">
-                        <button type="submit">Save and Run Program</button>
-                      </div>
+                      <button type="submit">Run</button>
                     </form>
-                    <form id="workspace-grade-form" class="workspace-buffer-form" action="/workspace/grade" method="post">
+                    <form id="workspace-grade-form" class="workspace-buffer-form command-form" action="/workspace/grade" method="post">
                       <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
                       <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
                       <input type="hidden" name="selected_file" value="{_escape(selected_file)}">
                       <input type="hidden" name="file_path" value="{_escape(selected_file)}">
                       <textarea id="workspace-grade-content" class="workspace-buffer-content" name="content" hidden></textarea>
-                      <label class="runner-control">
-                        Runner
-                        <select id="workspace-runner-select" name="runner" required>
-                          {_runner_option("local_unsafe", runner, "local_unsafe")}
-                          {_runner_option("podman", runner, "podman")}
-                        </select>
-                      </label>
-                      {_runner_notice(runner)}
-                      <div class="actions">
-                        <button type="submit">Save and Grade Workspace</button>
-                      </div>
+                      <button type="submit">Grade</button>
                     </form>
-                    {run_output_html}
+                    <label class="runner-control command-runner">
+                      Runner
+                      <select id="workspace-runner-select" name="runner" form="workspace-grade-form" required>
+                        {_runner_option("local_unsafe", runner, "local_unsafe")}
+                        {_runner_option("podman", runner, "podman")}
+                      </select>
+                    </label>
                   </div>
-                  {latest_panel_html}
-                </div>
+                  <div class="pane-body">
+                    {editor_html}
+                  </div>
+                </section>
+                <aside class="workspace-pane feedback-panel">
+                  <div class="pane-title">Feedback</div>
+                  <div class="pane-body">
+                    {_runner_notice(runner)}
+                    <div id="workspace-run-output-region" aria-live="polite">
+                      {run_output_html}
+                    </div>
+                    {latest_panel_html}
+                  </div>
+                </aside>
               </div>
             </section>
+            {instructions_html}
             {history_html}
             <details class="card diagnostic-tools">
               <summary>Latest Detailed Diagnostics</summary>
@@ -784,6 +1063,69 @@ def _render_workspace_page(
             </details>
             """
     )
+
+
+def _render_workspace_title(workspace: Workspace, notice_html: str, read_error_html: str) -> str:
+    return f"""
+    <header class="workspace-title">
+      <div>
+        <p class="eyebrow">student workspace</p>
+        <h2>{_escape(workspace.assignment_slug)}</h2>
+        <p class="muted">{_escape(workspace.owner_key)} · {_escape(workspace.path)}</p>
+      </div>
+      <div class="workspace-title-status">
+        {notice_html}
+        {read_error_html}
+      </div>
+    </header>
+    """
+
+
+def _render_file_tree(workspace: Workspace, files: list[object], selected_file: str) -> str:
+    tree: dict[str, object] = {}
+    for workspace_file in files:
+        node = tree
+        parts = workspace_file.path.split("/")
+        for folder in parts[:-1]:
+            node = node.setdefault(folder, {})
+        node[parts[-1]] = workspace_file
+    return '<div class="file-tree">' + _render_file_tree_nodes(workspace, tree, selected_file) + "</div>"
+
+
+def _render_file_tree_nodes(workspace: Workspace, node: dict[str, object], selected_file: str, depth: int = 0) -> str:
+    folders = [(name, child) for name, child in sorted(node.items()) if isinstance(child, dict)]
+    files = [(name, child) for name, child in sorted(node.items()) if not isinstance(child, dict)]
+    rows: list[str] = []
+
+    for folder_name, child in folders:
+        child_html = _render_file_tree_nodes(workspace, child, selected_file, depth + 1)
+        rows.append(
+            f"""
+            <details class="tree-folder" open>
+              <summary class="tree-row tree-folder-row depth-{depth}">
+                <span class="tree-icon folder-icon">dir</span>
+                <span>{_escape(folder_name)}</span>
+              </summary>
+              <div class="tree-children">
+                {child_html}
+              </div>
+            </details>
+            """
+        )
+
+    for file_name, workspace_file in files:
+        is_active = workspace_file.path == selected_file
+        extension = Path(workspace_file.path).suffix.lstrip(".")[:3] or "txt"
+        rows.append(
+            f"""
+            <a class="tree-row tree-file-row depth-{depth} {'active' if is_active else ''}" href="{_workspace_url(workspace, workspace_file.path)}">
+              <span class="tree-icon file-icon">{_escape(extension)}</span>
+              <span>{_escape(file_name)}</span>
+            </a>
+            """
+        )
+
+    return "\n".join(rows)
 
 
 def _render_run_output(run_result: ProgramRun | None) -> str:
@@ -814,6 +1156,24 @@ def _render_run_output(run_result: ProgramRun | None) -> str:
       {_render_output_panel("Program stderr", run_result.program_stderr or _empty_panel_text("No program stderr."), bool(run_result.program_stderr), "output-block output-error")}
     </article>
     """
+
+
+def _program_run_payload(run_result: ProgramRun) -> dict[str, object]:
+    return {
+        "runner": run_result.runner,
+        "compile_returncode": run_result.compile_returncode,
+        "compile_stdout": run_result.compile_stdout,
+        "compile_stderr": run_result.compile_stderr,
+        "run_returncode": run_result.run_returncode,
+        "program_stdout": run_result.program_stdout,
+        "program_stderr": run_result.program_stderr,
+        "compile_timed_out": run_result.compile_timed_out,
+        "run_timed_out": run_result.run_timed_out,
+        "output_limited": run_result.output_limited,
+        "compiler_missing": run_result.compiler_missing,
+        "compiled": run_result.compiled,
+        "succeeded": run_result.succeeded,
+    }
 
 
 def _render_attempt_history(workspace: Workspace) -> str:
@@ -923,7 +1283,7 @@ def _render_file_tools(workspace: Workspace, selected_file: str) -> str:
         <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
         <label>
           New file
-          <input name="new_file_path" placeholder="helpers.cpp" required>
+          <input name="new_file_path" placeholder="include/helpers.hpp" required>
         </label>
         <button type="submit">Create</button>
       </form>
@@ -940,10 +1300,10 @@ def _render_assignment_instructions(assignment_path: Path) -> str:
     if not instructions:
         return ""
     return f"""
-    <article class="instructions" aria-labelledby="assignment-instructions-heading">
-      <h3 id="assignment-instructions-heading">Assignment instructions</h3>
+    <details class="instructions" aria-labelledby="assignment-instructions-heading">
+      <summary id="assignment-instructions-heading">Assignment instructions</summary>
       <pre>{_escape(instructions)}</pre>
-    </article>
+    </details>
     """
 
 

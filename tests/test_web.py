@@ -36,6 +36,52 @@ def test_web_index_loads_upload_form() -> None:
     assert "/static/diagnostic.css" in response.text
 
 
+def test_web_course_portal_lists_student_courses() -> None:
+    client = TestClient(app)
+
+    response = client.get("/courses", params={"owner_key": "demo-student", "role": "student"})
+
+    assert response.status_code == 200
+    assert "student portal" in response.text
+    assert "My Courses" in response.text
+    assert "CS 102-01" in response.text
+    assert "CS 150-02" in response.text
+    assert "Open Course" in response.text
+    assert "Diagnostic Console" in response.text
+
+
+def test_web_course_section_lists_assignment_publications(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(workspace_module, "WORKSPACES_DIR", tmp_path / "workspaces")
+    client = TestClient(app)
+
+    response = client.get(
+        "/courses/cs102-01-spring-2026",
+        params={"owner_key": "demo-student", "role": "student"},
+    )
+
+    assert response.status_code == 200
+    assert "CS 102-01" in response.text
+    assert "Assignments" in response.text
+    assert "Unit 02 - Byte Class Construction" in response.text
+    assert "Unit 03 - Byte Overloaded Constructors" in response.text
+    assert "Create Workspace" in response.text
+
+
+def test_web_instructor_course_section_shows_catalog_analytics() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/courses/cs102-01-spring-2026",
+        params={"owner_key": "stephen", "role": "instructor"},
+    )
+
+    assert response.status_code == 200
+    assert "instructor portal" in response.text
+    assert "Published" in response.text
+    assert "Drafts" in response.text
+    assert "Catalog Source" in response.text
+
+
 def test_web_landing_page_shows_existing_workspace_scores(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(workspace_module, "WORKSPACES_DIR", tmp_path / "workspaces")
     client = TestClient(app)
@@ -140,25 +186,38 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     )
 
     assert create_response.status_code == 200
-    assert "Workspace: demo-student / byte-class" in create_response.text
+    assert "student workspace" in create_response.text
+    assert "byte-class" in create_response.text
     assert "main.cpp" in create_response.text
     assert 'id="workspace-editor"' in create_response.text
     assert "CodeMirror.fromTextArea" in create_response.text
+    assert "/static/workspace.js" in create_response.text
+    assert "HamrForgeWorkspace.init" in create_response.text
     assert "Assignment instructions" in create_response.text
     assert "Build a C++ `Byte` class" in create_response.text
     assert 'name="runner"' in create_response.text
+    assert "Project Explorer" in create_response.text
+    assert "file-tree" in create_response.text
+    assert "pane-title" in create_response.text
+    assert "Feedback" in create_response.text
     assert "New file" in create_response.text
+    assert "include/helpers.hpp" in create_response.text
     assert "Rename selected" in create_response.text
     assert "Delete Selected" in create_response.text
-    assert "Save and Run Program" in create_response.text
+    assert "workspace-command-bar" in create_response.text
+    assert ">Save</button>" in create_response.text
+    assert ">Run</button>" in create_response.text
+    assert ">Grade</button>" in create_response.text
     assert "Run Output" in create_response.text
+    assert 'id="workspace-run-output-region"' in create_response.text
 
     create_file_response = client.post(
         "/workspace/file/create",
-        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "new_file_path": "helpers.cpp"},
+        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "new_file_path": "include/helpers.cpp"},
     )
     assert create_file_response.status_code == 200
     assert "File created." in create_file_response.text
+    assert "include" in create_file_response.text
     assert "helpers.cpp" in create_file_response.text
 
     rename_file_response = client.post(
@@ -166,21 +225,22 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
         data={
             "owner_key": "demo-student",
             "assignment_slug": "byte-class",
-            "file_path": "helpers.cpp",
-            "new_file_path": "helpers.hpp",
+            "file_path": "include/helpers.cpp",
+            "new_file_path": "src/helpers.hpp",
         },
     )
     assert rename_file_response.status_code == 200
     assert "File renamed." in rename_file_response.text
     assert "helpers.hpp" in rename_file_response.text
+    assert "src" in rename_file_response.text
 
     delete_file_response = client.post(
         "/workspace/file/delete",
-        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "file_path": "helpers.hpp"},
+        data={"owner_key": "demo-student", "assignment_slug": "byte-class", "file_path": "src/helpers.hpp"},
     )
     assert delete_file_response.status_code == 200
     assert "File deleted." in delete_file_response.text
-    assert "helpers.hpp" not in delete_file_response.text
+    assert "src/helpers.hpp" not in delete_file_response.text
 
     unsafe_file_response = client.post(
         "/workspace/file/create",
@@ -200,7 +260,7 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     )
     assert save_response.status_code == 200
     assert "File saved." in save_response.text
-    assert "Save File" in save_response.text
+    assert ">Save</button>" in save_response.text
 
     run_response = client.post(
         "/workspace/run",
@@ -268,3 +328,34 @@ def test_web_workspace_create_edit_and_grade(tmp_path: Path, monkeypatch) -> Non
     assert "Your code did not compile." in grade_after_edit_response.text
     assert 'id="workspace-grade-form"' in grade_after_edit_response.text
     assert 'id="workspace-grade-content"' in grade_after_edit_response.text
+
+
+def test_api_workspace_run_returns_json_without_page_refresh(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(workspace_module, "WORKSPACES_DIR", tmp_path / "workspaces")
+    client = TestClient(app)
+    client.post(
+        "/workspace/create",
+        data={"assignment": "assignments/byte-class", "owner_key": "demo-student"},
+        follow_redirects=True,
+    )
+
+    response = client.post(
+        "/api/workspace/run",
+        data={
+            "owner_key": "demo-student",
+            "assignment_slug": "byte-class",
+            "selected_file": "main.cpp",
+            "file_path": "main.cpp",
+            "content": Path("assignments/byte-class/starter/main.cpp").read_text(encoding="utf-8"),
+            "runner": "local_unsafe",
+        },
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["notice"] == "Workspace saved and program run."
+    assert payload["run"]["succeeded"] is True
+    assert payload["run"]["program_stdout"].count("Int:    99") == 1
+    assert "Run Output" in payload["run_output_html"]
+    assert "Program finished" in payload["run_output_html"]

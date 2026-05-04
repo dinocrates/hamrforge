@@ -77,12 +77,12 @@ def test_workspace_write_works_with_relative_workspace_root(tmp_path: Path, monk
 def test_workspace_file_management_create_rename_delete() -> None:
     workspace = create_workspace(Path("assignments/byte-class"), "demo-student")
 
-    create_workspace_file(workspace, "helpers.cpp", "// helper\n")
-    assert read_workspace_file(workspace, "helpers.cpp") == "// helper\n"
+    create_workspace_file(workspace, "include/helpers.cpp", "// helper\n")
+    assert read_workspace_file(workspace, "include/helpers.cpp") == "// helper\n"
 
-    rename_workspace_file(workspace, "helpers.cpp", "src/helpers.hpp")
+    rename_workspace_file(workspace, "include/helpers.cpp", "src/helpers.hpp")
     files = {file.path for file in list_workspace_files(workspace)}
-    assert "helpers.cpp" not in files
+    assert "include/helpers.cpp" not in files
     assert "src/helpers.hpp" in files
     assert read_workspace_file(workspace, "src/helpers.hpp") == "// helper\n"
 

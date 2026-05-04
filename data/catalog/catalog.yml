@@ -1,0 +1,83 @@
+terms:
+  - id: spring-2026
+    name: Spring 2026
+
+  - id: fall-2025
+    name: Fall 2025
+
+courses:
+  - id: cs102
+    code: CS 102
+    title: Object-Oriented C++
+
+  - id: cs150
+    code: CS 150
+    title: Intro to Web Programming
+
+sections:
+  - id: cs102-01-spring-2026
+    course_id: cs102
+    term_id: spring-2026
+    section_number: "01"
+    display_name: CS 102-01
+    meeting_info: Monday/Wednesday 10:00 AM
+
+  - id: cs102-02-spring-2026
+    course_id: cs102
+    term_id: spring-2026
+    section_number: "02"
+    display_name: CS 102-02
+    meeting_info: Tuesday/Thursday 1:00 PM
+
+  - id: cs150-02-spring-2026
+    course_id: cs150
+    term_id: spring-2026
+    section_number: "02"
+    display_name: CS 150-02
+    meeting_info: Online
+
+  - id: cs102-fall-2025
+    course_id: cs102
+    term_id: fall-2025
+    section_number: archived
+    display_name: CS 102
+    meeting_info: Archived course shell
+
+enrollments:
+  - owner_key: demo-student
+    section_id: cs102-01-spring-2026
+    role: student
+
+  - owner_key: demo-student
+    section_id: cs150-02-spring-2026
+    role: student
+
+  - owner_key: stephen
+    section_id: cs102-01-spring-2026
+    role: instructor
+
+  - owner_key: stephen
+    section_id: cs102-02-spring-2026
+    role: instructor
+
+assignment_publications:
+  - id: byte-class-cs102-01-spring-2026
+    assignment_path: assignments/byte-class
+    section_id: cs102-01-spring-2026
+    status: published
+    due: Sunday 11:59 PM
+    points: 40
+
+  - id: byte-constructors-cs102-01-spring-2026
+    assignment_path: assignments/byte-constructors
+    section_id: cs102-01-spring-2026
+    status: draft
+    due: Sunday 11:59 PM
+    points: 40
+
+  - id: byte-class-cs102-02-spring-2026
+    assignment_path: assignments/byte-class
+    section_id: cs102-02-spring-2026
+    status: published
+    due: Sunday 11:59 PM
+    points: 40
