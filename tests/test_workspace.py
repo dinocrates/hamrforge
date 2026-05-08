@@ -10,11 +10,15 @@ from hamrforge.workspace import (
     create_workspace,
     create_workspace_file,
     delete_workspace_file,
+    grade_workspace_job,
     grade_workspace,
+    latest_grading_job,
     list_attempts,
+    list_grading_jobs,
     list_workspace_files,
     read_workspace_file,
     rename_workspace_file,
+    reset_demo_workspace,
     write_workspace_file,
 )
 
@@ -114,6 +118,53 @@ def test_grade_workspace_creates_attempt_snapshot_and_reports() -> None:
     assert attempt.report_md_path.exists()
     assert (attempt.snapshot_path / "main.cpp").exists()
     assert (attempt.path / "attempt.json").exists()
+
+
+def test_grade_workspace_job_records_status_and_attempt_snapshot() -> None:
+    workspace = create_workspace(Path("assignments/byte-class"), "demo-student")
+
+    job = grade_workspace_job(workspace, runner_name="local_unsafe")
+    write_workspace_file(workspace, "main.cpp", "// edited after grading\n")
+
+    jobs = list_grading_jobs(workspace)
+
+    assert job.status == "completed"
+    assert job.score == 40
+    assert job.max_score == 40
+    assert job.attempt_id is not None
+    assert job.report_json_path is not None and job.report_json_path.exists()
+    assert job.report_md_path is not None and job.report_md_path.exists()
+    assert latest_grading_job(workspace) == job
+    assert [record.job_id for record in jobs] == [job.job_id]
+    attempt = list_attempts(workspace)[0]
+    assert attempt.attempt_id == job.attempt_id
+    assert "edited after grading" not in (attempt.snapshot_path / "main.cpp").read_text(encoding="utf-8")
+
+
+def test_reset_demo_workspace_restores_starter_files_and_clears_history() -> None:
+    workspace = create_workspace(Path("assignments/byte-class"), "demo-student")
+    write_workspace_file(workspace, "main.cpp", "// broken demo\n")
+    create_workspace_file(workspace, "scratch.cpp", "// scratch\n")
+    grade_workspace_job(workspace, runner_name="local_unsafe")
+
+    reset_workspace = reset_demo_workspace(workspace, "reset byte-class")
+
+    assert read_workspace_file(reset_workspace, "main.cpp") == Path("assignments/byte-class/starter/main.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "scratch.cpp" not in {file.path for file in list_workspace_files(reset_workspace)}
+    assert list_attempts(reset_workspace) == []
+    assert list_grading_jobs(reset_workspace) == []
+
+
+def test_reset_demo_workspace_requires_confirmation_and_demo_owner() -> None:
+    workspace = create_workspace(Path("assignments/byte-class"), "demo-student")
+    realish_workspace = create_workspace(Path("assignments/byte-class"), "student-123")
+
+    with pytest.raises(WorkspaceError, match='type "reset byte-class"'):
+        reset_demo_workspace(workspace, "reset")
+    with pytest.raises(WorkspaceError, match="demo owner keys"):
+        reset_demo_workspace(realish_workspace, "reset byte-class")
 
 
 def test_grade_workspace_accepts_runner_override() -> None:

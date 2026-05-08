@@ -6,29 +6,44 @@ from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid4
 
+import yaml
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from hamrforge.assignment import load_assignment, validate_assignment
-from hamrforge.catalog import CatalogError, CourseSection, AssignmentPublication, load_catalog, publications_for_section, sections_for_user
+from hamrforge.catalog import (
+    CatalogError,
+    CourseSection,
+    AssignmentPublication,
+    append_assignment_publication,
+    load_catalog,
+    publications_for_section,
+    sections_for_user,
+)
+from hamrforge.demo import reset_demo_data
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.models import GradeResult
 from hamrforge.runner import create_runner
 from hamrforge.workspace import (
+    GradingJob,
     ProgramRun,
     Workspace,
     WorkspaceError,
     create_workspace,
     create_workspace_file,
     delete_workspace_file,
-    grade_workspace,
+    grade_workspace_job,
+    latest_grading_job,
     latest_attempt,
+    load_grading_job,
     list_attempts,
+    list_grading_jobs,
     list_workspace_files,
     load_workspace,
     read_workspace_file,
     rename_workspace_file,
+    reset_demo_workspace,
     run_workspace_program,
     write_workspace_file,
 )
@@ -46,7 +61,26 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 def index(owner_key: str = "demo-student") -> HTMLResponse:
-    return HTMLResponse(_render_page(owner_key=owner_key))
+    return HTMLResponse(_render_front_door(owner_key=owner_key))
+
+
+@app.post("/demo/reset-data", response_class=HTMLResponse)
+def demo_reset_data(
+    owner_key: str = Form("demo-student"),
+    confirmation: str = Form(""),
+) -> HTMLResponse:
+    try:
+        if confirmation.strip() != "reset demo data":
+            raise WorkspaceError('type "reset demo data" to reset demo workspaces')
+        result = reset_demo_data(owner_key=owner_key)
+    except (WorkspaceError, CatalogError) as exc:
+        return HTMLResponse(_render_front_door(owner_key=owner_key, error=str(exc)), status_code=400)
+    return HTMLResponse(
+        _render_front_door(
+            owner_key=owner_key,
+            notice=f"Demo data reset for {result.owner_key}. Recreated {result.reset_count} workspace(s).",
+        )
+    )
 
 
 @app.get("/courses", response_class=HTMLResponse)
@@ -62,17 +96,115 @@ def course_portal(owner_key: str = "demo-student", role: str = "student") -> HTM
 @app.get("/courses/{section_id}", response_class=HTMLResponse)
 def course_section_view(section_id: str, owner_key: str = "demo-student", role: str = "student") -> HTMLResponse:
     try:
-        catalog = load_catalog()
+        selected, publications = _section_context(section_id, owner_key, role)
     except CatalogError as exc:
         return HTMLResponse(_render_page(error=str(exc)), status_code=500)
-    sections = sections_for_user(catalog, owner_key=owner_key, role=role)
-    selected = next((section for section in sections if section.section.id == section_id), None)
-    if selected is None:
+    except WorkspaceError as exc:
         return HTMLResponse(_render_app_page(_not_found_panel("Course section was not found for this user.")), status_code=404)
-    publications = publications_for_section(catalog, section_id)
     return HTMLResponse(
         _render_app_page(
             _render_course_section(owner_key, role, selected, publications),
+            owner_key=owner_key,
+            role=role,
+            section=selected,
+        )
+    )
+
+
+@app.get("/courses/{section_id}/results", response_class=HTMLResponse)
+def instructor_results_view(section_id: str, owner_key: str = "stephen", role: str = "instructor") -> HTMLResponse:
+    try:
+        selected, publications = _section_context(section_id, owner_key, role)
+    except CatalogError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=500)
+    except WorkspaceError:
+        return HTMLResponse(_render_app_page(_not_found_panel("Course section was not found for this user.")), status_code=404)
+    return HTMLResponse(
+        _render_app_page(
+            _render_instructor_results(owner_key, selected, publications),
+            owner_key=owner_key,
+            role=role,
+            section=selected,
+        )
+    )
+
+
+@app.get("/courses/{section_id}/assignment-builder", response_class=HTMLResponse)
+def instructor_assignment_builder_view(section_id: str, owner_key: str = "stephen", role: str = "instructor") -> HTMLResponse:
+    try:
+        selected, publications = _section_context(section_id, owner_key, role)
+    except CatalogError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=500)
+    except WorkspaceError:
+        return HTMLResponse(_render_app_page(_not_found_panel("Course section was not found for this user.")), status_code=404)
+    return HTMLResponse(
+        _render_app_page(
+            _render_assignment_builder_placeholder(selected, publications),
+            owner_key=owner_key,
+            role=role,
+            section=selected,
+        )
+    )
+
+
+@app.post("/courses/{section_id}/assignment-builder/create", response_class=HTMLResponse)
+def instructor_assignment_builder_create(
+    section_id: str,
+    owner_key: str = Form("stephen"),
+    role: str = Form("instructor"),
+    title: str = Form(...),
+    slug: str = Form(...),
+    points: float = Form(40),
+    due: str = Form("Sunday 11:59 PM"),
+    status: str = Form("draft"),
+    instructions: str = Form("Write your assignment instructions here."),
+    required_files: str = Form("main.cpp"),
+) -> HTMLResponse:
+    try:
+        selected, _publications = _section_context(section_id, owner_key, role)
+        assignment_path = _create_assignment_from_builder(
+            title=title,
+            slug=slug,
+            points=points,
+            due=due,
+            status=status,
+            instructions=instructions,
+            required_files=required_files,
+            section_id=section_id,
+        )
+        refreshed = publications_for_section(load_catalog(), section_id)
+        return HTMLResponse(
+            _render_app_page(
+                _render_assignment_builder_placeholder(
+                    selected,
+                    refreshed,
+                    notice=f"Assignment draft created: {assignment_path.as_posix()}",
+                ),
+                owner_key=owner_key,
+                role=role,
+                section=selected,
+            )
+        )
+    except (CatalogError, WorkspaceError, ValueError) as exc:
+        try:
+            selected, publications = _section_context(section_id, owner_key, role)
+            content = _render_assignment_builder_placeholder(selected, publications, error=str(exc))
+            return HTMLResponse(_render_app_page(content, owner_key=owner_key, role=role, section=selected), status_code=400)
+        except (CatalogError, WorkspaceError):
+            return HTMLResponse(_render_page(error=str(exc)), status_code=400)
+
+
+@app.get("/courses/{section_id}/section-setup", response_class=HTMLResponse)
+def instructor_section_setup_view(section_id: str, owner_key: str = "stephen", role: str = "instructor") -> HTMLResponse:
+    try:
+        selected, publications = _section_context(section_id, owner_key, role)
+    except CatalogError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=500)
+    except WorkspaceError:
+        return HTMLResponse(_render_app_page(_not_found_panel("Course section was not found for this user.")), status_code=404)
+    return HTMLResponse(
+        _render_app_page(
+            _render_section_setup_placeholder(selected, publications),
             owner_key=owner_key,
             role=role,
             section=selected,
@@ -205,6 +337,25 @@ def workspace_file_delete(
         return HTMLResponse(_render_page(error=str(exc)), status_code=400)
 
 
+@app.post("/workspace/reset-demo", response_class=HTMLResponse)
+def workspace_reset_demo(
+    owner_key: str = Form(...),
+    assignment_slug: str = Form(...),
+    confirmation: str = Form(""),
+) -> HTMLResponse:
+    try:
+        workspace = load_workspace(owner_key, assignment_slug)
+        reset_workspace = reset_demo_workspace(workspace, confirmation)
+        return HTMLResponse(
+            _render_workspace_page(
+                reset_workspace,
+                notice="Demo workspace reset from starter files.",
+            )
+        )
+    except WorkspaceError as exc:
+        return HTMLResponse(_render_page(error=str(exc)), status_code=400)
+
+
 @app.post("/workspace/grade", response_class=HTMLResponse)
 def workspace_grade(
     owner_key: str = Form(...),
@@ -220,12 +371,12 @@ def workspace_grade(
             write_workspace_file(workspace, file_path, content)
             selected_file = file_path
         selected_runner = create_runner(runner)
-        grade_workspace(workspace, runner=selected_runner, runner_name=runner)
+        grade_workspace_job(workspace, runner=selected_runner, runner_name=runner)
         return HTMLResponse(
             _render_workspace_page(
                 workspace,
                 selected_file=selected_file,
-                notice="Workspace saved and graded.",
+                notice="Workspace saved and grading job completed.",
                 runner=runner,
             )
         )
@@ -291,6 +442,52 @@ def api_workspace_run(
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
+@app.post("/api/workspace/grade")
+def api_workspace_grade(
+    owner_key: str = Form(...),
+    assignment_slug: str = Form(...),
+    selected_file: str = Form(""),
+    file_path: str = Form(""),
+    content: str | None = Form(None),
+    runner: str = Form("local_unsafe"),
+) -> JSONResponse:
+    try:
+        workspace = load_workspace(owner_key, assignment_slug)
+        if content is not None and file_path:
+            write_workspace_file(workspace, file_path, content)
+            selected_file = file_path
+        selected_runner = create_runner(runner)
+        job = grade_workspace_job(workspace, runner=selected_runner, runner_name=runner)
+        refreshed_workspace = load_workspace(owner_key, assignment_slug)
+        return JSONResponse(
+            {
+                "ok": True,
+                "notice": "Workspace saved and grading job completed.",
+                "selected_file": selected_file,
+                "job": _grading_job_payload(job),
+                **_workspace_grade_fragments(refreshed_workspace),
+            }
+        )
+    except (WorkspaceError, GradeError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@app.get("/api/workspace/jobs/{owner_key}/{assignment_slug}/{job_id}")
+def api_workspace_job(owner_key: str, assignment_slug: str, job_id: str) -> JSONResponse:
+    try:
+        workspace = load_workspace(owner_key, assignment_slug)
+        job = load_grading_job(workspace, job_id)
+        return JSONResponse(
+            {
+                "ok": True,
+                "job": _grading_job_payload(job),
+                **_workspace_grade_fragments(workspace),
+            }
+        )
+    except WorkspaceError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=404)
+
+
 @app.get("/workspace/report/{owner_key}/{assignment_slug}/{attempt_id}/{filename}")
 def workspace_report(owner_key: str, assignment_slug: str, attempt_id: str, filename: str) -> HTMLResponse:
     if filename not in {"report.json", "report.md"}:
@@ -315,6 +512,15 @@ def download_report(request_id: str, filename: str) -> HTMLResponse:
         return HTMLResponse("Not found", status_code=404)
     media_type = "application/json" if filename.endswith(".json") else "text/markdown"
     return HTMLResponse(report_path.read_text(encoding="utf-8"), media_type=media_type)
+
+
+def _section_context(section_id: str, owner_key: str, role: str) -> tuple[CourseSection, list[AssignmentPublication]]:
+    catalog = load_catalog()
+    sections = sections_for_user(catalog, owner_key=owner_key, role=role)
+    selected = next((section for section in sections if section.section.id == section_id), None)
+    if selected is None:
+        raise WorkspaceError(f"course section was not found for {owner_key}: {section_id}")
+    return selected, publications_for_section(catalog, section_id)
 
 
 def _render_app_page(
@@ -368,12 +574,19 @@ def _render_course_portal(owner_key: str, role: str, sections: list[CourseSectio
         current_cards = '<p class="muted">No current courses were found for this demo identity.</p>'
     alternate_role = "instructor" if role == "student" else "student"
     alternate_owner = "stephen" if alternate_role == "instructor" else "demo-student"
+    title = "My Sections" if role == "instructor" else "My Courses"
+    description = (
+        "Choose a section to review assignments, prototype analytics, and teaching tools."
+        if role == "instructor"
+        else "Choose a course to see your assignments and continue your workspaces."
+    )
+    secondary_html = _render_previous_courses_panel(role)
     return f"""
-    <section class="band card">
+    <section class="course-portal band card">
       <div class="section-strip">
         <div>
-          <h2>{'My Sections' if role == 'instructor' else 'My Courses'}</h2>
-          <p class="muted">Current course cards come from <code>data/catalog/catalog.yml</code>. This is still file-backed and demo-only.</p>
+          <h2>{_escape(title)}</h2>
+          <p class="muted">{_escape(description)}</p>
         </div>
         <form class="owner-form" action="/courses" method="get">
           <label>
@@ -394,6 +607,7 @@ def _render_course_portal(owner_key: str, role: str, sections: list[CourseSectio
         {current_cards}
       </div>
     </section>
+    {secondary_html}
     <section class="band card">
       <h2>Prototype shortcuts</h2>
       <div class="links">
@@ -406,13 +620,15 @@ def _render_course_portal(owner_key: str, role: str, sections: list[CourseSectio
 
 def _render_course_card(owner_key: str, role: str, section: CourseSection) -> str:
     query = urlencode({"owner_key": owner_key, "role": role})
+    action = "Open Section" if role == "instructor" else "Open Course"
+    helper = "Current section" if role == "instructor" else "Current course"
     return f"""
     <article class="assignment-card">
       <div>
-        <span class="status-label pass">{_escape(section.term.name)}</span>
+        <span class="status-label pass">{_escape(helper)}</span>
         <h3>{_escape(section.section.display_name)}</h3>
         <p class="muted">{_escape(section.course.code)} · {_escape(section.course.title)}</p>
-        <p class="muted">{_escape(section.section.meeting_info)}</p>
+        <p class="muted">{_escape(section.term.name)} · {_escape(section.section.meeting_info)}</p>
       </div>
       <div class="assignment-metrics">
         <div class="metric">
@@ -424,8 +640,23 @@ def _render_course_card(owner_key: str, role: str, section: CourseSection) -> st
           <strong>{_escape(section.section.section_number)}</strong>
         </div>
       </div>
-      <a class="button-link" href="/courses/{_escape_url(section.section.id)}?{query}">Open Course</a>
+      <a class="button-link" href="/courses/{_escape_url(section.section.id)}?{query}">{_escape(action)}</a>
     </article>
+    """
+
+
+def _render_previous_courses_panel(role: str) -> str:
+    title = "Previous Sections" if role == "instructor" else "Previous Courses"
+    message = (
+        "Archived sections will live here once real course history is connected."
+        if role == "instructor"
+        else "Archived courses will live here later. For now, this demo focuses on current courses."
+    )
+    return f"""
+    <details class="card secondary-course-panel">
+      <summary>{_escape(title)}</summary>
+      <p class="muted">{_escape(message)}</p>
+    </details>
     """
 
 
@@ -435,10 +666,19 @@ def _render_course_section(
     section: CourseSection,
     publications: list[AssignmentPublication],
 ) -> str:
-    cards = "\n".join(_render_publication_card(owner_key, publication) for publication in publications)
+    cards = "\n".join(_render_publication_card(owner_key, publication, role=role) for publication in publications)
     if not cards:
         cards = '<p class="muted">No assignments have been published for this section yet.</p>'
     analytics = _render_instructor_analytics(publications) if role == "instructor" else ""
+    actions = _render_instructor_section_actions(owner_key, section) if role == "instructor" else ""
+    assignment_intro = (
+        "Student assignments" if role == "student" else "Section assignments"
+    )
+    assignment_note = (
+        "Start a new workspace or continue where you left off."
+        if role == "student"
+        else "Review published work and prototype assignment controls for this section."
+    )
     return f"""
     <section class="band card">
       <div class="section-strip">
@@ -451,7 +691,9 @@ def _render_course_section(
         </div>
       </div>
       {analytics}
-      <h2>Assignments</h2>
+      {actions}
+      <h2>{_escape(assignment_intro)}</h2>
+      <p class="muted">{_escape(assignment_note)}</p>
       <div class="assignment-grid">
         {cards}
       </div>
@@ -459,13 +701,16 @@ def _render_course_section(
     """
 
 
-def _render_publication_card(owner_key: str, publication: AssignmentPublication) -> str:
+def _render_publication_card(owner_key: str, publication: AssignmentPublication, role: str = "student") -> str:
     workspace = _try_load_workspace(owner_key, publication.slug)
     attempts = list_attempts(workspace) if workspace else []
     latest = attempts[0] if attempts else None
     best = max(attempts, key=lambda attempt: _attempt_percent(attempt)) if attempts else None
-    workspace_status = "Workspace ready" if workspace else "Not started"
-    action_text = "Open Workspace" if workspace else "Create Workspace"
+    workspace_status = "In progress" if workspace else "Not started"
+    if role == "instructor":
+        action_text = "Open Workspace" if workspace else "Create Demo Workspace"
+    else:
+        action_text = "Continue Assignment" if workspace else "Start Assignment"
     latest_text = f"{latest.result.score:g} / {latest.result.max_score:g}" if latest else "No attempts"
     best_text = f"{best.result.score:g} / {best.result.max_score:g}" if best else "No attempts"
     return f"""
@@ -498,22 +743,364 @@ def _render_publication_card(owner_key: str, publication: AssignmentPublication)
 def _render_instructor_analytics(publications: list[AssignmentPublication]) -> str:
     published = sum(1 for publication in publications if publication.status == "published")
     drafts = sum(1 for publication in publications if publication.status != "published")
+    total = len(publications)
     return f"""
-    <div class="history-summary">
+    <div class="instructor-summary history-summary" aria-label="Instructor section summary">
       <div class="metric">
-        <span>Published</span>
+        <span>Published assignments</span>
         <strong>{published}</strong>
       </div>
       <div class="metric">
-        <span>Drafts</span>
+        <span>Draft assignments</span>
         <strong>{drafts}</strong>
       </div>
       <div class="metric">
-        <span>Catalog Source</span>
-        <strong>YAML</strong>
+        <span>Total assignments</span>
+        <strong>{total}</strong>
       </div>
     </div>
     """
+
+
+def _render_instructor_section_actions(owner_key: str, section: CourseSection) -> str:
+    query = urlencode({"owner_key": owner_key, "role": "instructor"})
+    base = f"/courses/{_escape_url(section.section.id)}"
+    return f"""
+    <section class="instructor-action-strip" aria-label="Instructor prototype actions">
+      <a class="button-link muted-action" href="{base}/results?{query}">Results</a>
+      <a class="button-link muted-action" href="{base}/assignment-builder?{query}">Assignment Builder</a>
+      <a class="button-link muted-action" href="{base}/section-setup?{query}">Section Setup</a>
+    </section>
+    """
+
+
+def _render_instructor_results(
+    owner_key: str,
+    section: CourseSection,
+    publications: list[AssignmentPublication],
+) -> str:
+    rows = "\n".join(_render_results_placeholder_row(owner_key, publication) for publication in publications)
+    if not rows:
+        rows = '<p class="muted">No assignments are published for this section yet.</p>'
+    return f"""
+    <section class="band card">
+      <div class="section-strip">
+        <div>
+          <p class="eyebrow">prototype instructor surface</p>
+          <h2>Section Results</h2>
+          <p class="muted">{_escape(section.section.display_name)} · student result data will appear here when rostered attempts exist.</p>
+        </div>
+        <a class="button-link" href="/courses/{_escape_url(section.section.id)}?owner_key={_escape_url(owner_key)}&role=instructor">Back to Section</a>
+      </div>
+      <div class="history-summary">
+        <div class="metric">
+          <span>Missing assignments</span>
+          <strong>prototype</strong>
+        </div>
+        <div class="metric">
+          <span>Average score</span>
+          <strong>prototype</strong>
+        </div>
+        <div class="metric">
+          <span>Compile errors</span>
+          <strong>prototype</strong>
+        </div>
+      </div>
+      <div class="prototype-table">
+        {rows}
+      </div>
+    </section>
+    """
+
+
+def _render_results_placeholder_row(owner_key: str, publication: AssignmentPublication) -> str:
+    workspace = _try_load_workspace(owner_key, publication.slug)
+    attempts = list_attempts(workspace) if workspace else []
+    latest = attempts[0] if attempts else None
+    latest_text = f"{latest.result.score:g} / {latest.result.max_score:g}" if latest else "No demo attempts"
+    return f"""
+    <article class="attempt-row">
+      <div>
+        <span class="status-label {'pass' if publication.status == 'published' else 'fail'}">{_escape(publication.status)}</span>
+        <h3>{_escape(publication.title)}</h3>
+        <p class="muted">Due: {_escape(publication.due)} · Points: {publication.points:g}</p>
+      </div>
+      <div class="attempt-score">
+        <strong>{_escape(latest_text)}</strong>
+        <span>demo owner</span>
+      </div>
+    </article>
+    """
+
+
+def _render_assignment_builder_placeholder(
+    section: CourseSection,
+    publications: list[AssignmentPublication],
+    notice: str = "",
+    error: str = "",
+) -> str:
+    assignment_options = "\n".join(
+        f"<option>{_escape(publication.title)}</option>" for publication in publications
+    )
+    if not assignment_options:
+        assignment_options = "<option>No section assignments yet</option>"
+    notice_html = f'<section class="notice" role="status">{_escape(notice)}</section>' if notice else ""
+    error_html = f'<section class="notice error" role="alert"><strong>Could not create assignment.</strong><pre>{_escape(error)}</pre></section>' if error else ""
+    return f"""
+    <section class="band card">
+      <div class="section-strip">
+        <div>
+          <p class="eyebrow">prototype instructor surface</p>
+          <h2>Assignment Builder</h2>
+          <p class="muted">This will become the teacher-friendly editor for assignment metadata, starter files, required files, checks, and publish state.</p>
+        </div>
+      </div>
+      {notice_html}
+      {error_html}
+      <div class="assignment-builder-layout">
+        <section class="builder-panel builder-primary-panel">
+          <h3>New Assignment</h3>
+          <form class="builder-form" action="/courses/{_escape_url(section.section.id)}/assignment-builder/create" method="post">
+            <input type="hidden" name="owner_key" value="stephen">
+            <input type="hidden" name="role" value="instructor">
+            <label>
+              Title
+              <input name="title" value="Unit 04 - New C++ Assignment" required>
+            </label>
+            <label>
+              Slug
+              <input name="slug" value="unit-04-new-assignment" required>
+            </label>
+            <label>
+              Language
+              <input value="cpp" disabled>
+            </label>
+            <label>
+              Points
+              <input name="points" type="number" min="1" value="40" required>
+            </label>
+            <label>
+              Due
+              <input name="due" value="Sunday 11:59 PM">
+            </label>
+            <label>
+              Publish status
+              <select name="status">
+                <option value="draft">draft</option>
+                <option value="published">published</option>
+              </select>
+            </label>
+            <label>
+              Required files
+              <textarea name="required_files" rows="3">main.cpp
+Assignment.cpp
+Assignment.h</textarea>
+            </label>
+            <label>
+              Student instructions
+              <textarea name="instructions" rows="7">Describe the assignment here. Students will receive starter files and can run/grade their work in HamrForge.</textarea>
+            </label>
+            <button type="submit">Create Assignment Draft</button>
+          </form>
+        </section>
+        <aside class="builder-side-rail">
+          <section class="builder-panel">
+            <h3>Preview assignment.yml</h3>
+            <pre class="mini-output">title: Unit 04 - New C++ Assignment
+slug: unit-04-new-assignment
+language: cpp
+standard: c++17
+compiler: g++
+max_score: 40
+runner: local_unsafe
+
+checks:
+  - name: Required files
+    type: file_check
+    points: 16
+  - name: Compiles
+    type: compile
+    points: 12
+  - name: Program runs to completion
+    type: console_io
+    points: 12</pre>
+          </section>
+          <section class="builder-panel">
+            <h3>Current section assignments</h3>
+            <label>
+              Assignment
+              <select>{assignment_options}</select>
+            </label>
+            <p class="muted">Created assignments are portable folders under <code>assignments/</code> and are published through the file-backed catalog for now.</p>
+          </section>
+          <section class="builder-panel">
+            <h3>Preview student instructions</h3>
+            <p class="muted">The generated <code>README.md</code> becomes the instructions students see in the workspace.</p>
+          </section>
+        </aside>
+      </div>
+    </section>
+    """
+
+
+def _render_section_setup_placeholder(
+    section: CourseSection,
+    publications: list[AssignmentPublication],
+) -> str:
+    return f"""
+    <section class="band card">
+      <div class="section-strip">
+        <div>
+          <p class="eyebrow">prototype instructor surface</p>
+          <h2>Section Setup</h2>
+          <p class="muted">Configure course section details, copy prior materials, and reserve Canvas/LTI connection information.</p>
+        </div>
+      </div>
+      <div class="builder-grid">
+        <section class="builder-panel">
+          <h3>Section details</h3>
+          <p><strong>{_escape(section.course.code)}</strong> · {_escape(section.course.title)}</p>
+          <p class="muted">{_escape(section.section.display_name)} · {_escape(section.term.name)} · {_escape(section.section.meeting_info)}</p>
+        </section>
+        <section class="builder-panel">
+          <h3>Copy from previous section</h3>
+          <p class="muted">Future workflow: import assignments, starter files, checks, due dates, and publish states from a previous course or section.</p>
+        </section>
+        <section class="builder-panel">
+          <h3>Canvas/LTI connection</h3>
+          <p class="muted">Future workflow: store deployment details, launch mappings, deep linking configuration, and grade passback policy.</p>
+        </section>
+        <section class="builder-panel">
+          <h3>Section assignments</h3>
+          <p class="muted">{len(publications)} assignment publication(s) are currently listed in the file-backed catalog.</p>
+        </section>
+      </div>
+    </section>
+    """
+
+
+def _create_assignment_from_builder(
+    title: str,
+    slug: str,
+    points: float,
+    due: str,
+    status: str,
+    instructions: str,
+    required_files: str,
+    section_id: str,
+) -> Path:
+    safe_slug = _safe_slug(slug)
+    title = title.strip()
+    if not title:
+        raise ValueError("assignment title is required")
+    if points <= 0:
+        raise ValueError("points must be positive")
+    if status not in {"draft", "published"}:
+        raise ValueError("publish status must be draft or published")
+
+    files = [_normalize_required_file(line) for line in required_files.splitlines() if line.strip()]
+    if not files:
+        raise ValueError("at least one required file is needed")
+    if not any(Path(filename).suffix == ".cpp" for filename in files):
+        files.insert(0, "main.cpp")
+
+    assignment_dir = ASSIGNMENTS_DIR / safe_slug
+    if assignment_dir.exists():
+        raise ValueError(f"assignment already exists: {assignment_dir.as_posix()}")
+    starter_dir = assignment_dir / "starter"
+    starter_dir.mkdir(parents=True)
+
+    assignment_config = {
+        "title": title,
+        "slug": safe_slug,
+        "language": "cpp",
+        "standard": "c++17",
+        "compiler": "g++",
+        "max_score": float(points),
+        "runner": "local_unsafe",
+        "submission": {
+            "required_files": files,
+            "accepted_extensions": [".cpp", ".h", ".hpp", ".zip"],
+            "ignored_paths": [".vs", "Debug", "Release", "x64", "__MACOSX"],
+        },
+        "checks": [
+            {"name": "Required files", "type": "file_check", "points": round(float(points) * 0.4, 2)},
+            {"name": "Compiles", "type": "compile", "points": round(float(points) * 0.3, 2)},
+            {
+                "name": "Program runs to completion",
+                "type": "console_io",
+                "points": round(float(points) * 0.3, 2),
+                "input": "",
+                "expected_contains": [],
+            },
+        ],
+    }
+    (assignment_dir / "assignment.yml").write_text(yaml.safe_dump(assignment_config, sort_keys=False), encoding="utf-8")
+    (assignment_dir / "README.md").write_text(_assignment_readme(title, instructions), encoding="utf-8")
+    for filename in files:
+        path = starter_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_starter_file_content(filename, title), encoding="utf-8")
+
+    validation = validate_assignment(assignment_dir)
+    if not validation.is_valid:
+        shutil.rmtree(assignment_dir, ignore_errors=True)
+        raise ValueError("generated assignment is invalid: " + "; ".join(validation.errors))
+
+    append_assignment_publication(
+        section_id=section_id,
+        assignment_path=assignment_dir,
+        status=status,
+        due=due.strip() or "Sunday 11:59 PM",
+        points=float(points),
+    )
+    return assignment_dir
+
+
+def _safe_slug(value: str) -> str:
+    safe = "".join(character.lower() if character.isalnum() else "-" for character in value.strip())
+    safe = "-".join(part for part in safe.split("-") if part)
+    if not safe:
+        raise ValueError("assignment slug is required")
+    return safe
+
+
+def _normalize_required_file(value: str) -> str:
+    filename = value.strip().replace("\\", "/")
+    path = Path(filename)
+    if path.is_absolute() or ".." in path.parts or not path.name:
+        raise ValueError(f"invalid required file path: {value}")
+    return path.as_posix()
+
+
+def _assignment_readme(title: str, instructions: str) -> str:
+    return f"# {title}\n\n{instructions.strip()}\n"
+
+
+def _starter_file_content(filename: str, title: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".cpp" and Path(filename).name == "main.cpp":
+        return f"""// {title}
+// Starter main.cpp generated by HamrForge.
+
+#include <iostream>
+
+int main() {{
+    std::cout << "Hello from HamrForge" << std::endl;
+    return 0;
+}}
+"""
+    if suffix in {".h", ".hpp"}:
+        guard = _safe_slug(filename).replace("-", "_").upper()
+        return f"""// {title}
+// Starter header generated by HamrForge.
+
+#ifndef {guard}
+#define {guard}
+
+#endif
+"""
+    return f"// {title}\n// Starter file generated by HamrForge.\n"
 
 
 def _not_found_panel(message: str) -> str:
@@ -632,6 +1219,73 @@ def _render_page(
   </script>
 </body>
 </html>"""
+
+
+def _render_front_door(
+    owner_key: str = "demo-student",
+    assignment: str = "assignments/byte-class",
+    runner: str = "local_unsafe",
+    notice: str = "",
+    error: str = "",
+) -> str:
+    message_html = ""
+    if notice:
+        message_html = f'<section class="notice" role="status">{_escape(notice)}</section>'
+    if error:
+        message_html = f'<section class="notice error" role="alert"><strong>Could not reset demo data.</strong><pre>{_escape(error)}</pre></section>'
+    return _render_page(
+        owner_key=owner_key,
+        assignment=assignment,
+        runner=runner,
+        extra_html=f"""
+        <section class="front-door">
+          <article class="front-door-panel">
+            <p class="eyebrow">prototype front door</p>
+            <h2>Choose a HamrForge demo path</h2>
+            <p class="muted">Start from courses first, then open assignments and workspaces. The diagnostic tools are still here when we need the lab bench.</p>
+            <div class="demo-path-grid">
+              <a class="demo-path-card" href="/courses?owner_key=demo-student&role=student">
+                <span class="status-label pass">Student Demo</span>
+                <h3>Open student courses</h3>
+                <p>See current course cards, open a section, launch an assignment workspace, run code, and grade.</p>
+              </a>
+              <a class="demo-path-card" href="/courses?owner_key=stephen&role=instructor">
+                <span class="status-label">Instructor Demo</span>
+                <h3>Open instructor sections</h3>
+                <p>Preview section dashboards, assignment cards, and early analytics for teaching workflows.</p>
+              </a>
+            </div>
+          </article>
+        </section>
+        <details class="card diagnostic-tools">
+          <summary>Diagnostic Tools</summary>
+          {message_html}
+          {_render_assignment_launcher(owner_key)}
+          {_render_demo_data_reset_tool(owner_key)}
+          {_render_diagnostic_tools(assignment, runner)}
+        </details>
+        """,
+    )
+
+
+def _render_demo_data_reset_tool(owner_key: str) -> str:
+    return f"""
+    <section class="demo-data-reset">
+      <h2>Demo data reset</h2>
+      <p class="muted">Prototype-only: recreate the demo student workspaces from starter files and clear demo attempts/jobs. Non-demo workspaces are not touched.</p>
+      <form class="inline-grid compact-inline-grid" action="/demo/reset-data" method="post">
+        <label>
+          Owner key
+          <input name="owner_key" value="{_escape(owner_key)}" required>
+        </label>
+        <label>
+          Type reset demo data
+          <input name="confirmation" placeholder="reset demo data" required>
+        </label>
+        <button class="danger-button" type="submit">Reset Demo Data</button>
+      </form>
+    </section>
+    """
 
 
 def _render_diagnostic_tools(assignment: str, runner: str) -> str:
@@ -904,6 +1558,77 @@ def _render_latest_result_panel(workspace: Workspace, attempt: Attempt | None) -
     """
 
 
+def _render_latest_job_panel(job: GradingJob | None) -> str:
+    if job is None:
+        return """
+        <aside class="latest-panel">
+          <h2>Latest Job</h2>
+          <p class="muted">No grading jobs yet.</p>
+        </aside>
+        """
+    status_class = "pass" if job.status == "completed" else "fail" if job.status == "failed" else ""
+    score_text = ""
+    if job.score is not None and job.max_score is not None:
+        score_text = f'<div class="score compact-score">{job.score:g} / {job.max_score:g}</div>'
+    error_text = f'<p class="muted">Error: {_escape(job.error)}</p>' if job.error else ""
+    attempt_text = f" · Attempt: {_escape(_format_attempt_id(job.attempt_id))}" if job.attempt_id else ""
+    return f"""
+    <aside class="latest-panel">
+      <h2>Latest Job</h2>
+      <span class="status-label {status_class}">{_escape(job.status)}</span>
+      {score_text}
+      <p class="muted">Runner: {_escape(job.runner)}{attempt_text}</p>
+      {error_text}
+    </aside>
+    """
+
+
+def _render_feedback_summary(workspace: Workspace, job: GradingJob | None, attempt: Attempt | None) -> str:
+    if attempt is None:
+        job_text = "No grading jobs yet." if job is None else f"Latest job: {job.status}"
+        return f"""
+        <aside class="latest-panel feedback-summary-card">
+          <h2>Feedback Summary</h2>
+          <p class="muted">No grade attempts yet.</p>
+          <p class="muted">{_escape(job_text)}</p>
+        </aside>
+        """
+
+    percent = _attempt_percent(attempt)
+    passed = all(check.passed for check in attempt.result.checks)
+    status_text = "Passed" if passed else "Review"
+    status_class = "pass" if passed else "fail"
+    flags = ", ".join(attempt.result.flags) if attempt.result.flags else "None"
+    job_status = job.status if job else "not recorded"
+    job_class = "pass" if job_status == "completed" else "fail" if job_status == "failed" else ""
+    report_md_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.md"
+    report_json_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.json"
+    return f"""
+    <aside class="latest-panel feedback-summary-card">
+      <div class="summary-heading-row">
+        <h2>Feedback Summary</h2>
+        <span class="status-label {status_class}">{status_text}</span>
+      </div>
+      <div class="score compact-score">{attempt.result.score:g} / {attempt.result.max_score:g}</div>
+      <p class="muted">{percent:.1f}% · Runner: {_escape(attempt.runner)}</p>
+      <div class="feedback-meta-grid">
+        <div>
+          <span>Job</span>
+          <strong class="{job_class}">{_escape(job_status)}</strong>
+        </div>
+        <div>
+          <span>Flags</span>
+          <strong>{_escape(flags)}</strong>
+        </div>
+      </div>
+      <div class="links">
+        <a href="{_escape(report_md_url)}">report.md</a>
+        <a href="{_escape(report_json_url)}">report.json</a>
+      </div>
+    </aside>
+    """
+
+
 def _extract_labeled_block(text: str, start_label: str, end_label: str | None) -> str:
     if start_label not in text:
         return ""
@@ -977,8 +1702,14 @@ def _render_workspace_page(
             report_md_url,
             runner=attempt.runner,
         )
+    latest_job = latest_grading_job(workspace)
     latest_panel_html = _render_latest_result_panel(workspace, attempt)
+    job_panel_html = _render_latest_job_panel(latest_job)
+    feedback_summary_html = _render_feedback_summary(workspace, latest_job, attempt)
     history_html = _render_attempt_history(workspace)
+    job_history_html = _render_job_history(workspace)
+    diagnostics_html = _render_latest_diagnostics(result_html)
+    activity_html = _render_workspace_activity(history_html, job_history_html, diagnostics_html)
     run_output_html = _render_run_output(run_result)
 
     file_tree_html = _render_file_tree(workspace, files, selected_file)
@@ -1050,17 +1781,22 @@ def _render_workspace_page(
                     <div id="workspace-run-output-region" aria-live="polite">
                       {run_output_html}
                     </div>
-                    {latest_panel_html}
+                    <div id="workspace-feedback-summary-region" aria-live="polite">
+                      {feedback_summary_html}
+                    </div>
                   </div>
                 </aside>
               </div>
             </section>
             {instructions_html}
-            {history_html}
-            <details class="card diagnostic-tools">
-              <summary>Latest Detailed Diagnostics</summary>
-              {result_html if result_html else '<p class="muted">No detailed result yet.</p>'}
-            </details>
+            <div id="workspace-activity-region">
+              {activity_html}
+            </div>
+            <div id="workspace-latest-job-region" hidden>{job_panel_html}</div>
+            <div id="workspace-latest-result-region" hidden>{latest_panel_html}</div>
+            <div id="workspace-attempt-history-region" hidden>{history_html}</div>
+            <div id="workspace-job-history-region" hidden>{job_history_html}</div>
+            <div id="workspace-diagnostics-region" hidden>{diagnostics_html}</div>
             """
     )
 
@@ -1176,6 +1912,53 @@ def _program_run_payload(run_result: ProgramRun) -> dict[str, object]:
     }
 
 
+def _grading_job_payload(job: GradingJob) -> dict[str, object]:
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "owner_key": job.owner_key,
+        "assignment_slug": job.assignment_slug,
+        "runner": job.runner,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "attempt_id": job.attempt_id,
+        "score": job.score,
+        "max_score": job.max_score,
+        "report_json_path": str(job.report_json_path) if job.report_json_path else None,
+        "report_md_path": str(job.report_md_path) if job.report_md_path else None,
+        "error": job.error,
+    }
+
+
+def _workspace_grade_fragments(workspace: Workspace) -> dict[str, str]:
+    attempt = latest_attempt(workspace)
+    result_html = ""
+    if attempt:
+        report_md_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.md"
+        report_json_url = f"/workspace/report/{_escape_url(workspace.owner_key)}/{_escape_url(workspace.assignment_slug)}/{_escape_url(attempt.attempt_id)}/report.json"
+        result_html = _render_result(
+            attempt.result,
+            f"{workspace.owner_key}/{workspace.assignment_slug}",
+            report_json_url,
+            report_md_url,
+            runner=attempt.runner,
+        )
+    fragments = {
+        "latest_job_html": _render_latest_job_panel(latest_grading_job(workspace)),
+        "latest_result_html": _render_latest_result_panel(workspace, attempt),
+        "feedback_summary_html": _render_feedback_summary(workspace, latest_grading_job(workspace), attempt),
+        "attempt_history_html": _render_attempt_history(workspace),
+        "job_history_html": _render_job_history(workspace),
+        "diagnostics_html": _render_latest_diagnostics(result_html),
+    }
+    fragments["activity_html"] = _render_workspace_activity(
+        fragments["attempt_history_html"],
+        fragments["job_history_html"],
+        fragments["diagnostics_html"],
+    )
+    return fragments
+
+
 def _render_attempt_history(workspace: Workspace) -> str:
     attempts = list_attempts(workspace)
     if not attempts:
@@ -1210,6 +1993,73 @@ def _render_attempt_history(workspace: Workspace) -> str:
         {rows}
       </div>
     </details>
+    """
+
+
+def _render_job_history(workspace: Workspace) -> str:
+    jobs = list_grading_jobs(workspace)
+    if not jobs:
+        return """
+        <details class="card attempt-history">
+          <summary>Grading Jobs</summary>
+          <p class="muted">No grading jobs yet. The next Grade click will create one.</p>
+        </details>
+        """
+
+    rows = "\n".join(_render_job_row(job, is_latest=job is jobs[0]) for job in jobs)
+    return f"""
+    <details class="card attempt-history">
+      <summary>Grading Jobs</summary>
+      <div class="attempt-list">
+        {rows}
+      </div>
+    </details>
+    """
+
+
+def _render_job_row(job: GradingJob, is_latest: bool) -> str:
+    status_class = "pass" if job.status == "completed" else "fail" if job.status == "failed" else ""
+    label = "Latest Job" if is_latest else "Job"
+    score_text = f"{job.score:g} / {job.max_score:g}" if job.score is not None and job.max_score is not None else "not scored"
+    detail = job.error or (f"Attempt: {_format_attempt_id(job.attempt_id)}" if job.attempt_id else "No attempt recorded yet.")
+    return f"""
+    <article class="attempt-row">
+      <div>
+        <span class="status-label {status_class}">{_escape(label)}: {_escape(job.status)}</span>
+        <h3>{_escape(_format_attempt_id(job.job_id))}</h3>
+        <p class="muted">Runner: {_escape(job.runner)} · {_escape(detail)}</p>
+      </div>
+      <div class="attempt-score">
+        <strong>{_escape(score_text)}</strong>
+      </div>
+    </article>
+    """
+
+
+def _render_latest_diagnostics(result_html: str) -> str:
+    return f"""
+    <details class="card diagnostic-tools">
+      <summary>Latest Detailed Diagnostics</summary>
+      {result_html if result_html else '<p class="muted">No detailed result yet.</p>'}
+    </details>
+    """
+
+
+def _render_workspace_activity(attempt_history_html: str, job_history_html: str, diagnostics_html: str) -> str:
+    return f"""
+    <section class="workspace-activity">
+      <div class="section-strip compact-strip">
+        <div>
+          <h2>Workspace Activity</h2>
+          <p class="muted">History and detailed diagnostic output live here so the editor stays primary.</p>
+        </div>
+      </div>
+      <div class="activity-grid">
+        {attempt_history_html}
+        {job_history_html}
+        {diagnostics_html}
+      </div>
+    </section>
     """
 
 
@@ -1288,7 +2138,33 @@ def _render_file_tools(workspace: Workspace, selected_file: str) -> str:
         <button type="submit">Create</button>
       </form>
       {selected_controls}
+      {_render_demo_reset_tool(workspace)}
     </section>
+    """
+
+
+def _render_demo_reset_tool(workspace: Workspace) -> str:
+    expected = f"reset {workspace.assignment_slug}"
+    disabled_note = ""
+    disabled_attr = ""
+    if not workspace.owner_key.startswith("demo"):
+        disabled_note = '<p class="muted">Reset is only available for demo workspaces.</p>'
+        disabled_attr = " disabled"
+    return f"""
+      <details class="demo-reset-tool">
+        <summary>Demo reset</summary>
+        <p class="muted">Prototype-only: recreate this workspace from starter files and clear attempts/jobs.</p>
+        <form class="file-tool-form" action="/workspace/reset-demo" method="post">
+          <input type="hidden" name="owner_key" value="{_escape(workspace.owner_key)}">
+          <input type="hidden" name="assignment_slug" value="{_escape(workspace.assignment_slug)}">
+          <label>
+            Type {_escape(expected)}
+            <input name="confirmation" placeholder="{_escape(expected)}" required{disabled_attr}>
+          </label>
+          <button class="danger-button" type="submit"{disabled_attr}>Reset Demo Workspace</button>
+        </form>
+        {disabled_note}
+      </details>
     """
 
 

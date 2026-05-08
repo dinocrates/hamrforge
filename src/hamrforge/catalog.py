@@ -76,7 +76,8 @@ class Catalog:
     publications: list[AssignmentPublication]
 
 
-def load_catalog(path: Path = CATALOG_PATH) -> Catalog:
+def load_catalog(path: Path | None = None) -> Catalog:
+    path = path or CATALOG_PATH
     if not path.exists():
         raise CatalogError(f"course catalog does not exist: {path}")
 
@@ -124,6 +125,43 @@ def sections_for_user(catalog: Catalog, owner_key: str, role: str) -> list[Cours
 
 def publications_for_section(catalog: Catalog, section_id: str) -> list[AssignmentPublication]:
     return [publication for publication in catalog.publications if publication.section_id == section_id]
+
+
+def append_assignment_publication(
+    section_id: str,
+    assignment_path: Path,
+    status: str,
+    due: str,
+    points: float,
+    path: Path | None = None,
+) -> None:
+    path = path or CATALOG_PATH
+    if not path.exists():
+        raise CatalogError(f"course catalog does not exist: {path}")
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise CatalogError(f"could not parse course catalog {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise CatalogError("course catalog must contain a YAML mapping.")
+
+    publications = raw.setdefault("assignment_publications", [])
+    if not isinstance(publications, list):
+        raise CatalogError("catalog.assignment_publications must be a list.")
+
+    publication_id = f"{assignment_path.name}-{section_id}"
+    publications[:] = [item for item in publications if not isinstance(item, dict) or item.get("id") != publication_id]
+    publications.append(
+        {
+            "id": publication_id,
+            "assignment_path": assignment_path.as_posix(),
+            "section_id": section_id,
+            "status": status,
+            "due": due,
+            "points": points,
+        }
+    )
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
 
 
 def _items(raw: dict[str, Any], key: str) -> list[dict[str, Any]]:

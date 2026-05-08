@@ -100,6 +100,8 @@ http://127.0.0.1:8000
 
 The private web UI can open a student workspace and can still grade one legacy ZIP at a time for instructor testing. Uploads and web reports are written under `data/`.
 
+For the instructor demo path, open **Instructor Demo**, choose a section, and open **Assignment Builder**. The current MVP builder can create a simple C++ assignment folder under `assignments/`, generate starter files, write `assignment.yml`, and publish the assignment into the file-backed course catalog for that section.
+
 ## Student Workspace Prototype
 
 Create a demo workspace from assignment starter files:
@@ -119,7 +121,36 @@ data/workspaces/demo-student/byte-class/
   main.cpp
 ```
 
-From the web UI, use **Create / Open** to read the assignment instructions, edit files in a syntax-highlighted browser editor, save changes, and grade the current workspace. Workspace grading stores attempt reports and snapshots under `.hamrforge/attempts/`.
+From the web UI, use **Create / Open** to read the assignment instructions, edit files in a syntax-highlighted browser editor, save changes, run the program, and grade the current workspace.
+
+Run and Grade use JSON endpoints in the browser so normal testing does not require a full page refresh. The non-JavaScript form routes still exist as fallbacks.
+
+Workspace grading now creates a local grading job record before running the grader. Execution is still synchronous in this MVP checkpoint, but the stored job boundary is the shape a future worker queue will use. Workspace data is stored under:
+
+```text
+data/workspaces/<owner>/<assignment-slug>/
+  .hamrforge/
+    workspace.json
+    jobs/
+      <job-id>/job.json
+    attempts/
+      <attempt-id>/
+        attempt.json
+        snapshot/
+        reports/
+          report.json
+          report.md
+```
+
+The grader operates on an attempt snapshot, not the live editable workspace folder. That keeps feedback tied to the exact code state that was graded.
+
+Before a prototype demo, reset the sample student workspaces with:
+
+```bash
+hamrforge reset-demo-data
+```
+
+This recreates the demo student workspaces from catalog-published assignment starter files and clears demo attempts/jobs. It only works for demo owner keys such as `demo-student`.
 
 ## Language Adapter Boundary
 

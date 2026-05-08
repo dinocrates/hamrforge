@@ -6,6 +6,8 @@ from typing import Sequence
 
 from hamrforge.assignment import validate_assignment
 from hamrforge.batch import batch_grade
+from hamrforge.catalog import CatalogError
+from hamrforge.demo import reset_demo_data
 from hamrforge.grading import GradeError, grade_submission
 from hamrforge.runner import create_runner
 from hamrforge.workspace import WorkspaceError, create_workspace
@@ -76,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     workspace_parser.add_argument("--owner", default="demo-student", help="Workspace owner key.")
     workspace_parser.add_argument("--overwrite", action="store_true", help="Replace an existing workspace.")
     workspace_parser.set_defaults(func=_create_workspace_command)
+
+    reset_demo_parser = subparsers.add_parser(
+        "reset-demo-data",
+        help="Reset demo student workspaces from starter files.",
+    )
+    reset_demo_parser.add_argument("--owner", default="demo-student", help="Demo owner key to reset.")
+    reset_demo_parser.set_defaults(func=_reset_demo_data_command)
 
     web_parser = subparsers.add_parser(
         "web",
@@ -154,6 +163,20 @@ def _create_workspace_command(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Workspace ready: {workspace.path}")
+    return 0
+
+
+def _reset_demo_data_command(args: argparse.Namespace) -> int:
+    try:
+        result = reset_demo_data(owner_key=args.owner)
+    except (WorkspaceError, CatalogError) as exc:
+        print(f"Could not reset demo data: {exc}")
+        return 1
+
+    print(f"Demo data reset for: {result.owner_key}")
+    print(f"Workspaces recreated: {result.reset_count}")
+    for path in result.workspace_paths:
+        print(f"- {path}")
     return 0
 
 

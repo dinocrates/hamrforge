@@ -52,6 +52,24 @@ class Attempt:
 
 
 @dataclass(frozen=True)
+class GradingJob:
+    job_id: str
+    path: Path
+    status: str
+    owner_key: str
+    assignment_slug: str
+    runner: str
+    created_at: str
+    updated_at: str
+    attempt_id: str | None = None
+    score: float | None = None
+    max_score: float | None = None
+    report_json_path: Path | None = None
+    report_md_path: Path | None = None
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class ProgramRun:
     runner: str
     compile_returncode: int
@@ -194,6 +212,15 @@ def delete_workspace_file(workspace: Workspace, relative_path: str) -> None:
     _touch_metadata(workspace)
 
 
+def reset_demo_workspace(workspace: Workspace, confirmation: str) -> Workspace:
+    expected = f"reset {workspace.assignment_slug}"
+    if confirmation.strip() != expected:
+        raise WorkspaceError(f'type "{expected}" to reset this demo workspace')
+    if not workspace.owner_key.startswith("demo"):
+        raise WorkspaceError("workspace reset is only available for demo owner keys")
+    return create_workspace(workspace.assignment_path, workspace.owner_key, overwrite=True)
+
+
 def grade_workspace(workspace: Workspace, runner: SandboxRunner | None = None, runner_name: str = "assignment default") -> Attempt:
     attempt_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     attempts_dir = workspace.path / ".hamrforge" / "attempts"
@@ -232,6 +259,77 @@ def grade_workspace(workspace: Workspace, runner: SandboxRunner | None = None, r
         result=result,
         runner=runner_name,
     )
+
+
+def grade_workspace_job(
+    workspace: Workspace,
+    runner: SandboxRunner | None = None,
+    runner_name: str = "assignment default",
+) -> GradingJob:
+    job = create_grading_job(workspace, runner_name=runner_name)
+    _write_job(job, status="running")
+    try:
+        attempt = grade_workspace(workspace, runner=runner, runner_name=runner_name)
+    except Exception as exc:
+        _write_job(job, status="failed", error=str(exc))
+        raise
+    _write_job(
+        job,
+        status="completed",
+        attempt_id=attempt.attempt_id,
+        score=attempt.result.score,
+        max_score=attempt.result.max_score,
+        report_json_path=attempt.report_json_path,
+        report_md_path=attempt.report_md_path,
+    )
+    loaded = _job_from_dir(job.path)
+    if loaded is None:
+        raise WorkspaceError(f"grading job record could not be loaded: {job.job_id}")
+    return loaded
+
+
+def create_grading_job(workspace: Workspace, runner_name: str = "assignment default") -> GradingJob:
+    job_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    jobs_dir = workspace.path / ".hamrforge" / "jobs"
+    job_dir = jobs_dir / job_id
+    job_dir.mkdir(parents=True, exist_ok=False)
+    now = _now()
+    job = GradingJob(
+        job_id=job_id,
+        path=job_dir,
+        status="queued",
+        owner_key=workspace.owner_key,
+        assignment_slug=workspace.assignment_slug,
+        runner=runner_name,
+        created_at=now,
+        updated_at=now,
+    )
+    _write_job(job, status="queued")
+    return job
+
+
+def latest_grading_job(workspace: Workspace) -> GradingJob | None:
+    jobs = list_grading_jobs(workspace)
+    return jobs[0] if jobs else None
+
+
+def load_grading_job(workspace: Workspace, job_id: str) -> GradingJob:
+    job_dir = _resolve_inside(workspace.path / ".hamrforge" / "jobs", _safe_segment(job_id))
+    job = _job_from_dir(job_dir)
+    if job is None:
+        raise WorkspaceError(f"grading job does not exist: {job_id}")
+    return job
+
+
+def list_grading_jobs(workspace: Workspace) -> list[GradingJob]:
+    jobs_dir = workspace.path / ".hamrforge" / "jobs"
+    if not jobs_dir.exists():
+        return []
+    return [
+        job
+        for job_dir in sorted((path for path in jobs_dir.iterdir() if path.is_dir()), reverse=True)
+        if (job := _job_from_dir(job_dir)) is not None
+    ]
 
 
 def run_workspace_program(
@@ -330,6 +428,62 @@ def _attempt_from_dir(attempt_dir: Path) -> Attempt | None:
     )
 
 
+def _job_from_dir(job_dir: Path) -> GradingJob | None:
+    metadata_path = job_dir / "job.json"
+    if not metadata_path.exists():
+        return None
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    return GradingJob(
+        job_id=str(metadata["job_id"]),
+        path=job_dir,
+        status=str(metadata["status"]),
+        owner_key=str(metadata["owner_key"]),
+        assignment_slug=str(metadata["assignment_slug"]),
+        runner=str(metadata["runner"]),
+        created_at=str(metadata["created_at"]),
+        updated_at=str(metadata["updated_at"]),
+        attempt_id=metadata.get("attempt_id"),
+        score=_optional_float(metadata.get("score")),
+        max_score=_optional_float(metadata.get("max_score")),
+        report_json_path=Path(metadata["report_json_path"]) if metadata.get("report_json_path") else None,
+        report_md_path=Path(metadata["report_md_path"]) if metadata.get("report_md_path") else None,
+        error=str(metadata.get("error", "")),
+    )
+
+
+def _write_job(
+    job: GradingJob,
+    status: str,
+    attempt_id: str | None = None,
+    score: float | None = None,
+    max_score: float | None = None,
+    report_json_path: Path | None = None,
+    report_md_path: Path | None = None,
+    error: str = "",
+) -> None:
+    existing = _job_from_dir(job.path)
+    metadata = {
+        "job_id": job.job_id,
+        "owner_key": job.owner_key,
+        "assignment_slug": job.assignment_slug,
+        "runner": job.runner,
+        "status": status,
+        "created_at": existing.created_at if existing else job.created_at,
+        "updated_at": _now(),
+        "attempt_id": attempt_id if attempt_id is not None else (existing.attempt_id if existing else None),
+        "score": score if score is not None else (existing.score if existing else None),
+        "max_score": max_score if max_score is not None else (existing.max_score if existing else None),
+        "report_json_path": str(report_json_path)
+        if report_json_path is not None
+        else (str(existing.report_json_path) if existing and existing.report_json_path else None),
+        "report_md_path": str(report_md_path)
+        if report_md_path is not None
+        else (str(existing.report_md_path) if existing and existing.report_md_path else None),
+        "error": error if error else (existing.error if existing else ""),
+    }
+    (job.path / "job.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+
+
 def _copy_snapshot(workspace_root: Path, snapshot_dir: Path) -> None:
     def ignore(directory: str, names: list[str]) -> set[str]:
         return {".hamrforge"} & set(names)
@@ -403,6 +557,12 @@ def _safe_segment(value: str) -> str:
 
 def _is_editable(path: Path) -> bool:
     return path.suffix.lower() in EDITABLE_EXTENSIONS
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _now() -> str:
